@@ -1,0 +1,7 @@
+name: cached-compressor
+description: Compacte le contexte au prix du cache provider, avec le modèle de la session en cours.
+version: 0.1.0
+author: rflores
+license: MIT
+hermes:
+  min_version: "0.23.0"
