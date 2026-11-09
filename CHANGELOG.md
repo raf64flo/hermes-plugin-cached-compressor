@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.2
+
+- Docs: the cache-read multiplier was stated as 10 % of the input price; the bills say 2 %
+  (`docs/BENCHMARK.md`, `README.md`), so the worked example drops from 0.092 to 0.022.
+- Docs: five rows served per size, not six; seven pinned passes per size, not six; the built-in's
+  14 039 characters come from tool-result pruning, not from the `_SUMMARY_INPUT_MAX_CHARS` bound.
+- Docs: three claims corrected against the record (the built-in is not always posted cold, the losing
+  run was served at 59 %, the judge's behaviour does not track transcript size), plus the cost spread
+  and median beside the mean.
+- The cache-less fallback message is now English, as the README already quoted it.
+- `bench/report.py`: the `pass` column shows date and time, not the date alone.
+
 ## 0.2.1
 
 - Head-to-head benchmark against the built-in compressor (`bench/bench.py`, 8 runs): same model, same
