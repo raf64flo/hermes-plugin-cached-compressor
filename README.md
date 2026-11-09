@@ -78,6 +78,17 @@ de contrat des API privées et la documentation d'activation. Voir le plan
 
 Limite connue : un seul slot, donc une session à la fois ; le clé par `session_id` est à faire.
 
+## Mesure
+
+`probes/cache_hit_live.py` (vrai provider, vraie assemblée de requête) :
+
+    writer (session)   prompt=20987  cached=20864  hit=99.4%
+    reader (plugin)    prompt=21267  cached=21248  hit=99.91%   coût=0.00166 $
+
+Concrètement : sur ~21 000 tokens de contexte, la compaction n'en repaie que ~19. Sans le
+`main_runtime` de session, le même code mesurait 0 % — la requête partait hors du contexte de la
+session.
+
 ## Tests
 
     python -m pytest tests -q
