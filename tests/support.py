@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-HERMES = Path.home() / ".hermes" / "hermes-agent"
+HERMES = Path(os.environ.get("HERMES_SOURCE", Path.home() / ".hermes" / "hermes-agent"))
 MODULE_NAME = "cached_compressor_under_test"
 
 

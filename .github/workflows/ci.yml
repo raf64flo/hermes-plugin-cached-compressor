@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      HERMES_REF: v0.23.0
+      HERMES_HOME: ${{ github.workspace }}/.hermes-ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone Hermes at the declared minimum version
+        run: git clone --depth 1 --branch "$HERMES_REF" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+
+      - name: Install Hermes
+        run: pip install -e "$RUNNER_TEMP/hermes-agent"
+
+      - name: Unit tests
+        env:
+          HERMES_SOURCE: ${{ runner.temp }}/hermes-agent
+        run: python -m pytest tests -q
+
+      - name: Catalog validation
+        run: hermes plugins validate "$GITHUB_WORKSPACE"
