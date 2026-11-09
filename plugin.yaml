@@ -1,6 +1,6 @@
 name: cached-compressor
 description: Compact the context at provider cache-read price, with the session's own model instead of a fixed auxiliary one.
-version: 0.2.0
+version: 0.2.1
 author: rflores
 license: MIT
 provides_hooks:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- Head-to-head benchmark against the built-in compressor (`bench/bench.py`): same model, same
+  transport, billed cost, blind rubric judge, warm-cache guard. Protocol, results and caveats in
+  `docs/BENCHMARK.md`.
+- README: install commands point at the published repository.
+
 ## 0.2.0
 
 - Fall back to the built-in compressor on routes that do not report cache reads, instead of replaying
