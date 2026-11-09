@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- `bench.py --aux-model`: run the built-in arm on a cheaper model, as `auxiliary.compression` does in a
+  deployment, while the plugin keeps the session model. The run records the provider's published
+  prices, and `report.py` prints the break-even ratio below which the plugin still saves money.
+- `bench.py --repeats` now gives each repeat its own transcript. Before, the second repeat found both
+  arms already cached, which flattered the built-in.
+- `report.py`: median, 95 % bootstrap interval and served / not-served split per size, and separate
+  tables per routing configuration.
+- `docs/BENCHMARK.md`: new section on a realistic auxiliary model. Against `mimo-v2.6-flash` the
+  plugin costs 1.9 to 2.6 times more and scores better; the break-even sits at an auxiliary price
+  ratio of 0.7 to 0.8, so the cost saving needs a session model cheaper than its auxiliary.
+
 ## 0.2.2
 
 - Docs: the cache-read multiplier was stated as 10 % of the input price; the bills say 2 %

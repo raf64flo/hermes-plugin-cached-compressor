@@ -69,6 +69,13 @@ A second experiment pins the output at 256 tokens for both engines, so the bill 
 the plugin's call then costs 0.40 of the built-in's at 20k and 0.78 at 100k when the prefix is
 served, and 2.7 to 3.0 times as much when it is not.
 
+Both of those hand the built-in arm the session model, which isolates the cache. A real deployment
+does not: the built-in calls `auxiliary.compression`, usually a cheaper model, and the picture
+inverts. With `mimo-v2.6-flash` as the auxiliary (0.14/0.28 USD per million against 0.15/0.6), the
+plugin costs 1.9 to 2.6 times more and scores 24.2/25 against 15.2/25. The break-even is an auxiliary
+price ratio of 0.7 to 0.8, so the plugin saves money only when the session model is cheaper than its
+auxiliary, which is rare. Against a cheap auxiliary it buys a better summary, not a cheaper bill.
+
 Protocol, per-run tables, why the hit is capped near 96 %, the summary-input coverage of both
 engines, and the reproduction commands: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 

@@ -51,7 +51,53 @@ the judge cannot separate the two engines: 19.9 against 19.6 out of 25, with hal
 flipping when the labels are swapped, which is what a rubric at the edge of noise looks like. The
 plugin's summaries are half the size on average.
 
-## 2. Pinned output (input only)
+## 2. The built-in on a cheap auxiliary model
+
+In a real deployment the built-in path does not call the session model: it calls
+`auxiliary.compression`, usually a cheaper one. Experiment 1 gives both arms the session model, which
+isolates the cache; this one asks the question a user actually faces.
+
+    python bench/bench.py --tokens 20000 --tokens 100000 --repeats 3 --aux-model mimo-v2.6-flash
+
+Three repeats per size, each on its own transcript: a repeat that reused the bytes would find both
+arms already cached, and the built-in's window is stable across repeats. Prices are read from the
+provider's own sheet: session `deepseek-v4.1-flash` at 0.15/0.6 USD per million input/output,
+auxiliary `mimo-v2.6-flash` at 0.14/0.28.
+
+    pass               size     hit   in x     out     b cost     p cost    cost     lat  judge (b/p)
+    20261109-222637   20000   93.0%    3.4   +184%   0.001738   0.004284 +146.5%  +21.2%  14.0/25.0 plugin
+    20261109-222637   20000   93.0%    3.4    +57%   0.001785   0.002686  +50.5%  -52.3%  17.0/23.5 plugin
+    20261109-222637   20000   93.0%    3.4   +121%   0.001691   0.003191  +88.7% +273.6%  14.5/24.0 plugin
+    20261109-222637  100000   96.0%    7.3   +173%   0.001396   0.003572 +155.9% +373.5%  17.0/24.0 plugin
+    20261109-222637  100000   96.0%    7.3    +92%   0.001296   0.003381 +160.9%  -49.2%  13.0/24.5 plugin
+    20261109-222637  100000   96.0%    7.3   +100%   0.001531   0.003299 +115.5%  -36.0%  16.0/24.5 plugin
+
+    runs: 6   plugin cache served: 6
+      subset                   n  cost median               CI95     mean  latency  output  input
+      all runs                 6      +131.0% [  +86.1, +149.2]  +119.7%   +88.5% +121.0% x 5.3
+      20000 tokens             3       +88.7% [  +50.5, +146.5]   +95.2%   +80.8% +120.5% x 3.4
+      100000 tokens             3      +155.9% [ +115.5, +160.9]  +144.1%   +96.1% +121.4% x 7.3
+
+    judge mean: built-in 15.2/25   plugin 24.2/25   (the plugin wins all six runs)
+
+The cache is served in every run and the plugin still costs 1.9 to 2.6 times more. Both reasons are
+in the columns: it writes about twice as many summary tokens, because the session model is more
+verbose than the cheap one, and it pays the session price for them.
+
+The break-even follows from the same numbers. Writing R for session price / auxiliary price, the
+plugin wins while
+
+    R < R_max = (built-in tokens at session price) / (plugin billed cost)
+
+which measures 0.8 at 20 000 tokens and 0.7 at 100 000. A session model is almost always more
+expensive than its auxiliary, so R > 1 > R_max: against a cheap auxiliary the plugin is a quality
+purchase, not a saving. `bench/report.py` prints R_max from the recorded price sheet.
+
+What the judge measures in this section is the model, not the engine: the two summaries come from
+different models. 24.2 against 15.2 says the session model summarizes better than the cheap one, which
+is expected and is the whole point of paying for it.
+
+## 3. Pinned output (input only)
 
 Output length is the confounder in experiment 1: the built-in writes 4 500 to 13 200 tokens of
 summary, the plugin 2 300 to 6 300. This variant removes it. Each engine's summary payload is
@@ -132,7 +178,7 @@ serving the prefix from cache.
 - n = 4 per size for the whole-compaction experiment, n = 7 per size for the pinned one. The judge is
   one model at temperature 0, and it disagrees with itself across label orders on half the runs.
 - In a real deployment the built-in path calls `auxiliary.compression`, often a cheaper model than
-  the session's. Both arms call the same model here to isolate the cache, so the absolute dollars
-  differ from a real configuration; compare against your own auxiliary model.
+  the session's. Section 2 measures exactly that: against a cheap auxiliary the plugin costs more and
+  summarizes better, so the dollars in section 1 describe the cache, not a deployment.
 - Transcripts are synthetic and regular. A more heterogeneous history changes the built-in's sampling
   coverage and both summary lengths.
