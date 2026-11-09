@@ -1,7 +1,9 @@
 name: cached-compressor
-description: Compacte le contexte au prix du cache provider, avec le modèle de la session en cours.
-version: 0.1.0
+description: Compact the context at provider cache-read price, with the session's own model instead of a fixed auxiliary one.
+version: 0.2.0
 author: rflores
 license: MIT
+provides_hooks:
+  - pre_api_request
 hermes:
   min_version: "0.23.0"
