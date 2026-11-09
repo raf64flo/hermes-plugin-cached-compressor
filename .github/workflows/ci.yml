@@ -24,7 +24,7 @@ jobs:
         run: git clone --depth 1 --branch "$HERMES_REF" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
 
       - name: Install Hermes
-        run: pip install -e "$RUNNER_TEMP/hermes-agent" pytest ruamel.yaml
+        run: pip install -e "$RUNNER_TEMP/hermes-agent" pytest ruamel.yaml requests httpx
 
       - name: Unit tests
         env:
