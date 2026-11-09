@@ -40,7 +40,7 @@ def whole_compaction() -> None:
         for run in record["runs"]:
             builtin, plugin = run["arms"]["builtin"], run["arms"]["plugin"]
             rows.append({
-                "pass": record["_file"].split("-")[1].split(".")[0],
+                "pass": "-".join(record["_file"].split("-")[1:]).split(".")[0],
                 "size": run["target_tokens"],
                 "builtin": builtin,
                 "plugin": plugin,
@@ -56,7 +56,7 @@ def whole_compaction() -> None:
         return
 
     print("## Whole compaction\n")
-    print(f"{'pass':8s} {'size':>6s} {'hit':>7s} {'in x':>6s} {'out':>7s} {'b cost':>10s} "
+    print(f"{'pass':16s} {'size':>6s} {'hit':>7s} {'in x':>6s} {'out':>7s} {'b cost':>10s} "
           f"{'p cost':>10s} {'cost':>7s} {'lat':>7s}  judge (b/p)")
     for row in rows:
         judge = row["judge"]
@@ -65,7 +65,7 @@ def whole_compaction() -> None:
         plugin_total = (totals.get("plugin") or {}).get("total")
         verdict = judge.get("better_arm", "-")
         stable = "" if judge.get("label_order_agrees", True) else " (unstable)"
-        print(f"{row['pass']:8s} {row['size']:6d} {row['hit']:7.1%} {row['in_ratio']:6.1f} "
+        print(f"{row['pass']:16s} {row['size']:6d} {row['hit']:7.1%} {row['in_ratio']:6.1f} "
               f"{row['out_ratio']:+6.0f}% {row['builtin']['cost_usd']:10.6f} "
               f"{row['plugin']['cost_usd']:10.6f} {row['d_cost']:+6.1f}% {row['d_lat']:+6.1f}%  "
               f"{builtin_total}/{plugin_total} {verdict}{stable}")
