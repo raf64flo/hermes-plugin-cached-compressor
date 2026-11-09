@@ -55,6 +55,10 @@ class CachedCompressor(ContextCompressor):
 
     #: Fenêtre en cours de résumé, posée par ``_summarize_window`` pour ``_call_summary_llm``.
     _window: Optional[list[dict[str, Any]]] = None
+    #: Index de fin de fenêtre dans la liste de travail, ou ``None``.
+    _window_end: Optional[int] = None
+    #: Vrai si la liste de travail a la même longueur que le transcript d'origine.
+    _same_shape: bool = False
     #: Transcript vierge, avant élagage, posé par ``compress``.
     _pristine: Optional[list[dict[str, Any]]] = None
 
@@ -77,12 +81,22 @@ class CachedCompressor(ContextCompressor):
         scan: Any, focus_topic: Optional[str], memory_context: str, bypass_cooldown: bool,
     ) -> Optional[str]:
         # Aucune logique reprise : le parent garde le pin déterministe, l'annulation et le rollback.
+        #
+        # La fenêtre est une tranche de ``messages``, pas du transcript d'origine : l'élagage des
+        # résultats d'outils réécrit les contenus, donc l'identité ne survit qu'à l'intérieur de
+        # cette liste (mesuré : index_of sur le transcript d'origine rendait None, et le plugin
+        # retombait silencieusement sur le parent). L'élagage réécrit sans retirer, d'où le contrôle
+        # de longueur avant de réutiliser l'index comme position dans le fil.
         self._window = list(turns_to_summarize)
+        self._window_end = summary.index_of(messages, turns_to_summarize)
+        self._same_shape = self._pristine is not None and len(messages) == len(self._pristine)
         try:
             return super()._summarize_window(
                 messages, turns_to_summarize, scan, focus_topic, memory_context, bypass_cooldown)
         finally:
             self._window = None
+            self._window_end = None
+            self._same_shape = False
 
     def _wire_for_session(self) -> Optional[dict[str, Any]]:
         wire = state.SLOT.snapshot()
@@ -102,7 +116,7 @@ class CachedCompressor(ContextCompressor):
 
     def _call_summary_llm(self, prompt: str, prompt_started_at: float) -> str:
         wire = self._wire_for_session()
-        window_end = summary.index_of(self._pristine, self._window)
+        window_end = self._window_end if self._same_shape else None
         messages = summary.reader_messages(wire, self._window, prompt, window_end=window_end)
         if wire is None or messages is None:
             return super()._call_summary_llm(prompt, prompt_started_at)

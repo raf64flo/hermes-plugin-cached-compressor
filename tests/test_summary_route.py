@@ -98,6 +98,32 @@ def test_index_of_par_identite() -> None:
     assert summary.index_of(transcript, []) is None
 
 
+def test_index_de_la_liste_de_travail_alimente_l_alignement(monkeypatch) -> None:
+    # L'élagage a réécrit les contenus : seule la position dans la liste de travail est fiable.
+    wire = {"messages": [{"role": "system", "content": "s"},
+                         {"role": "user", "content": "u1"},
+                         {"role": "assistant", "content": "a1"},
+                         {"role": "user", "content": "u2"}],
+            "message_count": 4, "history_len": 3, "model": "m-session", "provider": "p-session"}
+    SLOT.record(request={"messages": wire["messages"]}, request_messages=wire["messages"],
+                model="m-session", provider="p-session", base_url="", api_mode="", session_id="s")
+    seen: dict = {}
+
+    def fake_call_llm(**kwargs):
+        seen.update(kwargs)
+        return _response()
+
+    monkeypatch.setattr("cached_compressor_under_test.call_llm", fake_call_llm)
+    engine = _engine()
+    engine._window = [{"role": "assistant", "content": "a1"}, {"role": "user", "content": "u2"}]
+    engine._window_end = 2      # fin de fenêtre dans la liste de travail
+    engine._same_shape = True
+    engine._call_summary_llm("INSTRUCTION", 0.0)
+    # cut = (4 - 3) + 2 + 1 = 4 : les quatre messages du fil, puis l'instruction
+    assert len(seen["messages"]) == 5
+    assert seen["messages"][-1] == {"role": "user", "content": "INSTRUCTION"}
+
+
 def test_main_runtime_porte_la_session() -> None:
     runtime = summary.main_runtime({**WIRE, "session_id": "s9"}, "sk-test")
     assert runtime["model"] == "m-session"
