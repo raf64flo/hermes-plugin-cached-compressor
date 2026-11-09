@@ -48,23 +48,28 @@ Real compaction of a 161-message session: 161 down to 103 messages, one auxiliar
 
 ## Head-to-head benchmark
 
-Same model, same transport, both engines running their real `compress()`: four runs over ~20 000 and
+Same model, same transport, both engines running their real `compress()`: eight runs over ~20 000 and
 ~100 000-token transcripts, billed cost read from the router's own `usage` field.
 
     arm          cost USD        latency      input tokens   cache hit   summary size
-    built-in     0.0036-0.0088   31-142 s     5 863-8 157    0 %         baseline
-    plugin       0.0032-0.0064   36-60 s      26 017-44 585   0-96 %      -8 to -40 %
+    built-in     0.0036-0.0092   31-148 s     5 863-8 157    0 %         baseline
+    plugin       0.0027-0.0069   28-79 s      26 017-44 585   0-96 %      half the size
 
-    mean over the four runs: -32 % billed cost, -38 % latency
+    mean over the eight runs: -32 % billed cost, -45 % latency
+    the four runs where the provider served the prefix: -48 % billed cost
 
 Read that table with its two caveats. The plugin sends 3 to 7 times more input tokens and pays for
 them at the cache price, so the gain depends on the provider actually serving the prefix from cache;
-without it, the larger prefix costs more. And its summary comes out 8 to 40 % shorter, which a
-rubric judge scores below the built-in's on detail: its mean is 19.0/25 against 20.1/25, with two
-stable verdicts for the built-in and two unstable ties.
+without it, the larger prefix costs more (the losing run is one of those, +15.6 %). And its summary
+comes out about half as long, which the rubric judge cannot score apart from the built-in's: 19.6/25
+against 19.9/25, with half the verdicts flipping when the labels are swapped.
 
-Protocol, per-run table, the summary-input coverage of both engines, and the reproduction commands:
-[docs/BENCHMARK.md](docs/BENCHMARK.md).
+A second experiment pins the output at 256 tokens for both engines, so the bill isolates the prompt:
+the plugin's call then costs 0.40 of the built-in's at 20k and 0.78 at 100k when the prefix is
+served, and 2.7 to 3.0 times as much when it is not.
+
+Protocol, per-run tables, why the hit is capped near 96 %, the summary-input coverage of both
+engines, and the reproduction commands: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## When it does not help
 
