@@ -35,7 +35,7 @@ from agent.auxiliary_client import (
 )
 from agent.context_compressor import ContextCompressor, _is_refusal_response
 
-from . import cacheability, state, summary
+from . import cacheability, contract, state, summary
 
 __all__ = ["CachedCompressor", "register"]
 
@@ -52,6 +52,20 @@ TURNS_POINTER = (
 
 class CachedCompressor(ContextCompressor):
     """Le compresseur intégré, avec la requête de résumé servie depuis le payload fil capturé."""
+
+    def on_session_end(self, session_id: str, messages: list[dict[str, Any]]) -> None:
+        """Libère le slot de la session close : il retient une conversation entière, en mémoire.
+
+        Ne lève jamais vers la boucle de l'agent : Hermes ferme beaucoup de choses à cet instant, et
+        une exception ici masquerait la vraie erreur de fin de session.
+        """
+        try:
+            super().on_session_end(session_id, messages)
+        finally:
+            try:
+                state.SLOT.clear(session_id)
+            except Exception:
+                pass
 
     #: Fenêtre en cours de résumé, posée par ``_summarize_window`` pour ``_call_summary_llm``.
     _window: Optional[list[dict[str, Any]]] = None
@@ -200,19 +214,39 @@ def _finish_reason(response: Any) -> str:
     return str(getattr(choices[0], "finish_reason", "") or "")
 
 
+def _usage_field(container: Any, name: str) -> Any:
+    """Lit un champ dans un objet ou un dict : les clients rendent l'un ou l'autre."""
+    if container is None:
+        return None
+    if isinstance(container, dict):
+        return container.get(name)
+    return getattr(container, name, None)
+
+
+#: Champs de cache connus, du plus répandu au plus spécifique : OpenAI et vLLM, puis DeepSeek,
+#: Anthropic et Gemini. Le premier présent et entier gagne.
+_CACHE_FIELDS = ("cached_tokens", "prompt_cache_hit_tokens", "cache_read_input_tokens",
+                 "cached_content_token_count", "cachedContentTokenCount")
+
+
 def _cached_tokens(response: Any) -> int:
-    """Tokens servis par le cache du provider, lus dans l'usage ; 0 si le provider ne les rapporte pas."""
-    usage = getattr(response, "usage", None)
-    details = getattr(usage, "prompt_tokens_details", None)
-    if details is None and isinstance(usage, dict):
-        details = usage.get("prompt_tokens_details")
-    value = getattr(details, "cached_tokens", None)
-    if value is None and isinstance(details, dict):
-        value = details.get("cached_tokens")
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+    """Tokens servis par le cache du provider, lus dans l'usage ; 0 si rien n'est rapporté.
+
+    Un backend qui ne rapporte aucun de ces champs est indiscernable d'un backend sans cache : c'est
+    exactement ce que la garde de cacheabilité traite, en repassant au compresseur intégré après deux
+    mesures muettes.
+    """
+    usage = _usage_field(response, "usage")
+    details = _usage_field(usage, "prompt_tokens_details")
+    for field in _CACHE_FIELDS:
+        for container in (details, usage):
+            value = _usage_field(container, field)
+            try:
+                if value is not None:
+                    return int(value)
+            except (TypeError, ValueError):
+                continue
+    return 0
 
 
 def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any]) -> None:
@@ -239,6 +273,12 @@ def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any]) -> 
 
 def register(ctx: Any) -> None:
     """Point d'entrée unique : moteur de contexte, ou plugin porteur du hook."""
+    issues = contract.problems()
+    if issues:
+        logger.error(
+            "cached-compressor: incompatible Hermes build, keeping the built-in compressor: %s",
+            "; ".join(issues))
+        return
     if hasattr(ctx, "register_context_engine"):
         ctx.register_context_engine(CachedCompressor())
     register_hook = getattr(ctx, "register_hook", None)

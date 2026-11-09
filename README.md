@@ -92,13 +92,43 @@ never have seen that exact prefix. Cacheless behaviour is logged:
 
     cached-compressor: route without confirmed cache, falling back to the built-in compressor
 
+## Privacy and memory
+
+The plugin keeps the last request payload per session, because that byte-identical copy is what makes
+the cache hit possible. What that implies:
+
+- Only the `messages` and `tools` of the last request are kept, for at most 8 sessions and 64 MiB of
+  estimated bytes; past either limit the oldest session is dropped. `on_session_end` clears the slot
+  of the session that closes.
+- No message content, no tool output, no summary text reaches the logs or the telemetry. The plugin
+  logs routes (`provider=... model=...`) and counters (`prompt=... cached=...`); its telemetry entry
+  carries `cache_read_ratio` and nothing else.
+- Messages are copied shallowly on capture, so a later in-place edit of the live history (the built-in
+  pruner rewrites the `content` of old tool results) does not change what the slot returns. Nested
+  values such as `tool_calls` stay shared with the live history: deep-copying a session transcript
+  costs more than the guarantee is worth.
+- The slot is process-wide by design: two imports of the package (context engine and ordinary plugin)
+  resolve to the same `sys.modules` holder, so the hook and the engine never write to different slots.
+
+`tests/test_state_privacy.py` holds those four properties: no content in the logs, release at session
+end, byte budget, and one session cannot read another's thread.
+
 ## Requirements
 
-- a provider with prefix caching, and `cached_tokens` in its usage payload;
-- `plugins.isolation: in_process` (the default). The `host` isolation mode is incompatible: the
-  context engine subclasses Hermes' own compressor class, which cannot be imported across an
-  isolation boundary;
-- Hermes 0.23.0 or newer.
+- a provider with prefix caching, and a usage field reporting the cache read. `docs/PROVIDERS.md` lists
+  the fields read, the one-minute check, and what changes on a local backend;
+- Hermes `0.23.0` or later, with `plugins.isolation: in_process` (the default). The `host` isolation
+  mode is incompatible: the context engine subclasses Hermes' own compressor class, which cannot be
+  imported across an isolation boundary.
+
+### Compatibility policy
+
+The plugin subclasses Hermes' compressor and posts its summary through `call_llm`, so it depends on
+symbols Hermes does not publish (`contract.py` lists them). Rather than hope, `register()` checks their
+presence and signature at load time and keeps the built-in compressor with an explicit message if one
+is missing, and `tests/test_contract.py` fails at the first version that moves. CI runs the suite
+against the declared minimum and against `main`, the latter allowed to fail. Upstreaming a public seam
+for context engines is the only real fix; until then, pin Hermes to a version you have tested.
 
 ## Install
 
