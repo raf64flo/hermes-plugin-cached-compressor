@@ -14,6 +14,9 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.environ.get("HERMES_SOURCE", os.path.expanduser("~/.hermes/hermes-agent")))
+
+REPO = os.environ.get("PLUGIN_ROOT",
+                     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import hermes_bootstrap  # noqa: F401
 
 os.environ.setdefault("HERMES_HOME", tempfile.mkdtemp(prefix="probe-home-"))
@@ -21,12 +24,11 @@ os.environ.setdefault("HERMES_HOME", tempfile.mkdtemp(prefix="probe-home-"))
 from run_agent import AIAgent
 from agent.chat_completion_helpers import _build_api_kwargs_for_mode, _iteration_summary_api_messages
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import importlib.util
 
 spec = importlib.util.spec_from_file_location(
-    "cc_probe", "{REPO}/__init__.py",
-    submodule_search_locations=[os.path.dirname(os.path.dirname(os.path.abspath(__file__)))])
+    "cc_probe", f"{REPO}/__init__.py",
+    submodule_search_locations=[REPO])
 cc = importlib.util.module_from_spec(spec)
 sys.modules["cc_probe"] = cc
 spec.loader.exec_module(cc)

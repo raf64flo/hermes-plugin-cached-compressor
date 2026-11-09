@@ -23,7 +23,8 @@ os.environ.setdefault("HERMES_HOME", tempfile.mkdtemp(prefix="probe-home-"))
 from run_agent import AIAgent
 from agent.chat_completion_helpers import _build_api_kwargs_for_mode, _iteration_summary_api_messages
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.environ.get("PLUGIN_ROOT",
+                     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 spec = importlib.util.spec_from_file_location(
     "cc_probe", f"{REPO}/__init__.py", submodule_search_locations=[REPO])
 cc = importlib.util.module_from_spec(spec)
