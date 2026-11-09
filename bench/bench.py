@@ -58,7 +58,7 @@ SESSION = f"bench-{os.getpid()}"
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/131.0 Safari/537.36")
 CHARS_PER_TOKEN = 3.6
-WARM_ATTEMPTS = 4
+WARM_ATTEMPTS = 6
 WARM_SLEEP_S = 8
 JUDGE_MODEL = os.environ.get("BENCH_JUDGE_MODEL", MODEL)
 #: Varying the salt gives each repeat a transcript the provider cache has never seen, for both arms.
@@ -142,8 +142,9 @@ def _cost(usage: dict) -> float | None:
 class Transport:
     """Posts exactly the messages an engine builds and returns an OpenAI-shaped response."""
 
-    def __init__(self, model: str | None = None) -> None:
+    def __init__(self, model: str | None = None, body_extra: dict | None = None) -> None:
         self.model = model or MODEL
+        self.body_extra = dict(body_extra or {})
         self.calls: list[dict] = []
 
     def __call__(self, **kwargs) -> object:
@@ -152,6 +153,7 @@ class Transport:
         for key in ("tools", "tool_choice", "temperature"):
             if kwargs.get(key) is not None:
                 body[key] = kwargs[key]
+        body.update(self.body_extra)
         request = urllib.request.Request(
             BASE + "/chat/completions", data=json.dumps(body).encode(), method="POST",
             headers={"Authorization": f"Bearer {KEY}", "Content-Type": "application/json",
@@ -234,14 +236,21 @@ def run_arm(kind: str, messages: list[dict]) -> dict:
 
 
 def warm(transport: Transport, wire: dict) -> dict:
-    """Send the session prefix until the provider reports it as cached, as a session would."""
+    """Send the session prefix until two consecutive requests report it as cached.
+
+    The write side is asynchronous: an identical request can miss, then be served a few seconds
+    later (measured: 0 %, 0 %, 95.3 %, 95.3 % on four identical posts). One hit does not mean the
+    cache is ready for the next request.
+    """
     attempts: list[dict] = []
+    streak = 0
     for _ in range(WARM_ATTEMPTS):
         transport(messages=wire["messages"], tools=wire.get("tools"))
         detail = transport.calls[-1]
         attempts.append({key: detail[key] for key in ("prompt_tokens", "cached_tokens")})
         hit = (detail["cached_tokens"] / detail["prompt_tokens"]) if detail["prompt_tokens"] else 0.0
-        if hit >= 0.9:
+        streak = streak + 1 if hit >= 0.9 else 0
+        if streak >= 2:
             break
         time.sleep(WARM_SLEEP_S)
     last = attempts[-1]
