@@ -2,9 +2,12 @@
 
 ## 0.2.1
 
-- Head-to-head benchmark against the built-in compressor (`bench/bench.py`): same model, same
-  transport, billed cost, blind rubric judge, warm-cache guard. Protocol, results and caveats in
-  `docs/BENCHMARK.md`.
+- Head-to-head benchmark against the built-in compressor (`bench/bench.py`, 8 runs): same model, same
+  transport, billed cost, blind rubric judge, warm-cache guard.
+- Input-only variant (`bench/input_only.py`), output pinned at 256 tokens for both engines, so the
+  bill isolates the prompt from the length of the summary.
+- `bench/report.py` regenerates the published tables from the raw records.
+- Protocol, results and caveats: `docs/BENCHMARK.md`.
 - README: install commands point at the published repository.
 
 ## 0.2.0

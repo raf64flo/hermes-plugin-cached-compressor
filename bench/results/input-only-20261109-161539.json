@@ -1,0 +1,80 @@
+{
+ "model": "deepseek-v4.1-flash",
+ "output_cap": 256,
+ "runs": [
+  {
+   "target_tokens": 20000,
+   "warm": {
+    "attempts": [
+     {
+      "prompt_tokens": 26668,
+      "cached_tokens": 0
+     },
+     {
+      "prompt_tokens": 26668,
+      "cached_tokens": 26624
+     }
+    ],
+    "hit": 0.9984
+   },
+   "arms": {
+    "builtin": {
+     "messages": 1,
+     "prompt_tokens": 8157,
+     "cached_tokens": 0,
+     "completion_tokens": 256,
+     "cost_usd": 0.00137715,
+     "duration_s": 3.39,
+     "chars": 28532
+    },
+    "plugin": {
+     "messages": 79,
+     "prompt_tokens": 26094,
+     "cached_tokens": 24320,
+     "completion_tokens": 256,
+     "cost_usd": 0.00049266,
+     "duration_s": 4.33,
+     "chars": 82397
+    }
+   },
+   "cost_ratio": 0.358
+  },
+  {
+   "target_tokens": 100000,
+   "warm": {
+    "attempts": [
+     {
+      "prompt_tokens": 121431,
+      "cached_tokens": 26624
+     },
+     {
+      "prompt_tokens": 121431,
+      "cached_tokens": 121344
+     }
+    ],
+    "hit": 0.9993
+   },
+   "arms": {
+    "builtin": {
+     "messages": 1,
+     "prompt_tokens": 6141,
+     "cached_tokens": 0,
+     "completion_tokens": 256,
+     "cost_usd": 0.00107475,
+     "duration_s": 3.32,
+     "chars": 22650
+    },
+    "plugin": {
+     "messages": 143,
+     "prompt_tokens": 44585,
+     "cached_tokens": 42752,
+     "completion_tokens": 256,
+     "cost_usd": 0.00055681,
+     "duration_s": 4.32,
+     "chars": 138679
+    }
+   },
+   "cost_ratio": 0.518
+  }
+ ]
+}
