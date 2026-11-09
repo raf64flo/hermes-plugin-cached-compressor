@@ -99,8 +99,20 @@ class CachedCompressor(ContextCompressor):
             self._same_shape = False
 
     def _wire_for_session(self) -> Optional[dict[str, Any]]:
-        wire = state.SLOT.snapshot()
-        if not summary.route_matches(wire, self.model, self.provider):
+        # Le compresseur du parent est lié à la session par ``bind_session_state`` ; un moteur non
+        # lié (processus mono-session) garde le comportement historique : slot le plus récent.
+        session_id = str(getattr(self, "_session_id", "") or "")
+        wire = state.SLOT.snapshot(session_id or None)
+        if not summary.route_matches(wire, self.model, self.provider, session_id):
+            shown = wire if wire is not None else (state.SLOT.snapshot() if session_id else None)
+            if shown is not None:
+                # Sans cette trace, la perte du mode préfixe (donc du hit de cache) resterait
+                # silencieuse : on ne verrait que l'absence de cache_read_tokens dans la télémétrie.
+                logger.info(
+                    "cached-compressor: slot écarté (slot session=%r, moteur session=%r, "
+                    "slot route=%r/%r, moteur route=%r/%r)",
+                    shown.get("session_id"), session_id, shown.get("model"), shown.get("provider"),
+                    self.model, self.provider)
             return None
         return wire
 

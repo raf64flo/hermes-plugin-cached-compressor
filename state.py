@@ -1,11 +1,14 @@
-"""Slot du dernier payload fil observé, rempli par le hook ``pre_api_request``.
+"""Slots des derniers payloads fil observés, remplis par le hook ``pre_api_request``.
 
 Le hook reçoit ``request`` (le payload complet envoyé au provider, après assemblage, sanitizers et
 plan de cache) et ``request_messages`` (sa liste de messages). On garde des copies de surface : le
 hook documente lui-même que ``deepcopy`` coûte trop cher sur un transcript de session, et le
 compresseur ne relit ce slot qu'au tour suivant.
 
-Une seule session écrit ce slot : il est remplacé à chaque requête, jamais empilé.
+Un slot par session, et non un slot unique : un processus peut servir plusieurs conversations
+(gateway, agents de flotte, sous-agents) avec le même couple modèle/provider. Avec un slot unique, la
+dernière requête émise écrasait le slot des autres, et la compaction d'une session pouvait se servir
+du fil d'une autre. Les sessions sont bornées en nombre, la plus ancienne écriture cédant la place.
 """
 
 from __future__ import annotations
@@ -16,13 +19,17 @@ import time
 import types
 from typing import Any
 
+#: Nombre de sessions gardées en mémoire dans un même processus.
+MAX_SESSIONS = 8
+
 
 class PayloadSlot:
-    """Dernier payload fil, plus la route qui l'a produit."""
+    """Dernier payload fil par session, plus la route qui l'a produit."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._data: dict[str, Any] | None = None
+        self._slots: dict[str, dict[str, Any]] = {}
+        self._recency: list[str] = []
 
     def record(self, **hook_kwargs: Any) -> None:
         request = hook_kwargs.get("request")
@@ -33,8 +40,9 @@ class PayloadSlot:
         if not isinstance(messages, list) or not messages:
             return
         tools = payload.get("tools")
+        key = str(hook_kwargs.get("session_id") or "")
         with self._lock:
-            self._data = {
+            self._slots[key] = {
                 "messages": list(messages),
                 "tools": list(tools) if isinstance(tools, list) else [],
                 "model": hook_kwargs.get("model"),
@@ -46,14 +54,33 @@ class PayloadSlot:
                 "message_count": len(messages),
                 "recorded_at": time.time(),
             }
+            if key in self._recency:
+                self._recency.remove(key)
+            self._recency.append(key)
+            while len(self._recency) > MAX_SESSIONS:
+                self._slots.pop(self._recency.pop(0), None)
 
-    def snapshot(self) -> dict[str, Any] | None:
+    def snapshot(self, session_id: str | None = None) -> dict[str, Any] | None:
+        """Payload d'une session, ou de la plus récente si ``session_id`` est omis."""
         with self._lock:
-            return dict(self._data) if self._data else None
+            key = None
+            if session_id is None:
+                key = self._recency[-1] if self._recency else None
+            else:
+                key = str(session_id)
+            data = self._slots.get(key) if key is not None else None
+            return dict(data) if data else None
 
-    def clear(self) -> None:
+    def clear(self, session_id: str | None = None) -> None:
         with self._lock:
-            self._data = None
+            if session_id is None:
+                self._slots.clear()
+                self._recency.clear()
+                return
+            key = str(session_id)
+            self._slots.pop(key, None)
+            if key in self._recency:
+                self._recency.remove(key)
 
 
 _SHARED_HOLDER = "_hermes_cached_compressor_shared"

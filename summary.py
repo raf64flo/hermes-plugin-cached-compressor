@@ -12,16 +12,26 @@ from typing import Any, Optional
 from .alignment import wire_cut
 
 
-def route_matches(wire: Optional[dict[str, Any]], model: str | None, provider: str | None) -> bool:
+def route_matches(
+    wire: Optional[dict[str, Any]], model: str | None, provider: str | None, session_id: str = "",
+) -> bool:
     """La route capturée doit être celle de la session courante.
 
     Un changement de modèle ou une bascule de secours depuis la capture rend le cache froid : mieux
     vaut alors passer par le modèle auxiliaire, moins cher, que d'envoyer la session entière au
     plein tarif.
+
+    Le cadrage par session vient en plus de la route : dans un processus qui sert plusieurs
+    conversations avec le même modèle, le fil d'une autre session ferait payer la compaction pour un
+    cache qui n'est pas le sien, et le résumé serait bâti sur un texte étranger. Un fil sans
+    ``session_id`` (vieux payload) reste accepté, faute de mieux.
     """
     if not wire:
         return False
     if not wire.get("messages") or not wire.get("model"):
+        return False
+    captured_session = str(wire.get("session_id") or "")
+    if session_id and captured_session and captured_session != str(session_id):
         return False
     return (wire.get("model") or "") == (model or "") and (wire.get("provider") or "") == (provider or "")
 
