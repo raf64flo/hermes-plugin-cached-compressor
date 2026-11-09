@@ -35,7 +35,7 @@ jobs:
       # Hermes' editable install does not pull every module the plugin reaches at import time
       # (ruamel.yaml is gated to >= 3.14, requests and httpx are imported lazily), so add those.
       - name: Install Hermes and the test runner
-        run: pip install -e "$RUNNER_TEMP/hermes-agent" pytest ruamel.yaml requests httpx
+        run: pip install -e "$RUNNER_TEMP/hermes-agent" pytest ruamel.yaml requests httpx psutil
 
       - name: Unit tests
         env:

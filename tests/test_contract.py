@@ -7,6 +7,7 @@ s'enregistrer plutôt que de casser au milieu d'une compaction.
 
 from __future__ import annotations
 
+import pytest
 from support import load_plugin
 
 _plugin = load_plugin()
@@ -16,6 +17,13 @@ contract = _plugin.contract  # type: ignore[attr-defined]
 def test_contrat_respecte_sur_ce_hermes():
     """Sur la version installée, tout ce que le plugin utilise est présent et signé comme attendu."""
     assert contract.problems() == []
+
+
+def test_harnais_verifie_a_part():
+    """Le harnais de mesure a son propre contrat : il ne conditionne pas l'installation du moteur."""
+    pytest.importorskip("agent.chat_completion_helpers",
+                        reason="psutil ou une dépendance de mesure absente de cette installation")
+    assert contract.harness_problems() == []
 
 
 def test_un_symbole_absent_est_signale(monkeypatch):

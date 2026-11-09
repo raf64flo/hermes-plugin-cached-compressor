@@ -22,7 +22,8 @@ from __future__ import annotations
 import importlib
 import inspect
 
-#: (module, attribut, méthode de l'attribut ou None, paramètres exigés ou None)
+#: Surface du plugin à l'exécution : c'est elle qui décide si le moteur peut s'installer.
+#: Chaque entrée : (module, attribut, méthode de l'attribut ou None, paramètres exigés ou None).
 REQUIRED: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
     ("agent.context_compressor", "ContextCompressor", "compress", ("messages",)),
     ("agent.context_compressor", "_is_refusal_response", None, ("content",)),
@@ -30,6 +31,12 @@ REQUIRED: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
     ("agent.auxiliary_client", "extract_content_or_reasoning", None, None),
     ("agent.auxiliary_client", "aux_interrupt_protection", None, None),
     ("agent.auxiliary_client", "AuxiliaryExplicitCancellation", None, None),
+)
+
+#: Surface du harnais de mesure (``bench/``), pas du plugin : un import qui échoue ici ne doit pas
+#: empêcher le moteur de s'installer, et ``agent.chat_completion_helpers`` tire des dépendances que
+#: l'installation minimale de Hermes ne pose pas toujours.
+HARNESS: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
     ("agent.chat_completion_helpers", "_iteration_summary_api_messages", None, None),
     ("agent.chat_completion_helpers", "_build_api_kwargs_for_mode", None, None),
 )
@@ -37,8 +44,19 @@ REQUIRED: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
 
 def problems() -> list[str]:
     """Tout ce qui empêche le plugin de fonctionner sur ce Hermes, en clair et en une passe."""
+    return _problems(REQUIRED)
+
+
+def harness_problems() -> list[str]:
+    """Ce qui empêche ``bench/`` de mesurer sur ce Hermes ; n'affecte pas l'installation."""
+    return _problems(HARNESS)
+
+
+def _problems(
+    required: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...],
+) -> list[str]:
     found: list[str] = []
-    for module_name, attribute, method, params in REQUIRED:
+    for module_name, attribute, method, params in required:
         try:
             module = importlib.import_module(module_name)
         except Exception as error:
