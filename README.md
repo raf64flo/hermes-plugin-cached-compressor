@@ -1,105 +1,130 @@
 # cached-compressor
 
-Moteur de contexte Hermes qui compacte la session **au prix du cache provider**, avec le modèle de
-la session en cours plutôt qu'un modèle auxiliaire fixé.
+A Hermes context engine that compacts a session at the provider's cache-read price, using the
+session's own model instead of a fixed auxiliary one.
 
-## Le problème
+## The problem
 
-Le compresseur intégré sérialise la fenêtre dans un prompt texte neuf et l'envoie au modèle
-auxiliaire de configuration. Le provider principal ne voit donc jamais cette requête : il repaie un
-prefill complet au tour suivant, et le prompt du résumé est presque aussi gros que la session.
+Hermes' built-in compressor serializes a window of the conversation into a fresh text prompt and
+sends it to the configured auxiliary model. The main provider never sees that request, so:
 
-## L'idée
+- the summary call is billed as a brand new prompt, at full input price;
+- the main loop's prefix cache is left untouched, so the next turn repays prefill;
+- the summary is written by whatever model sits in `auxiliary.compression`, which may not be the
+  model that actually holds the conversation.
 
-Le préfixe de session est déjà en cache chez le provider. On n'envoie donc pas un résumé du texte :
-on renvoie le préfixe réel, tronqué, suivi d'une instruction de synthèse. Seuls les tokens de sortie
-sont au plein tarif ; le reste est facturé au tarif de lecture de cache.
+## The idea
 
-## Mesures (2026-11-09, `nous` / `deepseek/deepseek-v4.1-flash-1017`)
+The session prefix is already cached at the provider. Instead of sending a re-serialized copy of the
+conversation, send the real prefix, truncated at the compaction boundary, followed by a summary
+instruction. Only the output tokens are billed at full price; the prefix is billed as a cache read.
 
-Historique de 20 987 tokens, 162 messages, queue de 12 messages protégée, payload construit par le
-chemin réel de Hermes (`_iteration_summary_api_messages` puis `_build_api_kwargs_for_mode`).
+The prefix must be byte-identical to what the main loop sent. Rebuilding a transcript by hand breaks
+the cache: stripping content, canonicalizing `tool_calls` arguments, or prepending the system prompt
+at send time is enough to miss. The plugin therefore captures the payload that was just sent, through
+the `pre_api_request` hook, and reuses it.
 
-    requête                          prompt   cached   hit
-    W  writer, chemin réel           20 987        0   0,0 %   (froid, normal)
-    A  reader, chemin réel           19 690   19 584  99,5 %   conception validée
-    B  reader, reconstruction brute  19 803        0   0,0 %   artefact d'une mesure naïve
+## Measured results
 
-    effectif A = 106 + 0,1 x 19 584 = 2 064 contre 22 346 au plein tarif, soit un ratio de 0,092
+Provider with prefix-cache reporting, 20 987-token history, 162 messages, 12-message protected tail,
+payload built by Hermes' own assembly path (`_iteration_summary_api_messages` then
+`_build_api_kwargs_for_mode`):
 
-L'enseignement principal est B : une reconstruction artisanale du transcript tombe à 0 %. Le strip
-des contenus, la canonisation des arguments de `tool_calls` et le prompt système préfixé à l'envoi
-suffisent à invalider le préfixe. D'où la règle du projet : **on ne reconstruit pas le fil, on
-capture celui qui vient d'être envoyé.**
+    request                         prompt   cached    hit
+    W  writer, real path            20 987        0   0.0 %   cold, expected
+    A  reader, real path            19 690   19 584  99.5 %   design validated
+    B  reader, hand-rebuilt         19 803        0   0.0 %   why rebuilding is banned
 
-## Architecture
+    effective A = 106 + 0.1 x 19 584 = 2 064 against 22 346 at full price, ratio 0.092
+    (0.1 is this provider's cache-read multiplier; substitute your own)
 
-Deux points d'entrée dans le même paquet, tous deux par `register(ctx)` :
+Full round trip on a real session, through `CachedCompressor._call_summary_llm`:
 
-- moteur de contexte (`context.engine: cached-compressor`) : `CachedCompressor` sous-classe le
-  compresseur intégré et ne change que la requête de résumé ;
-- plugin ordinaire (`plugins.enabled`) : enregistre le hook `pre_api_request`, qui reçoit le payload
-  fil final (`agent/turn_api_request.py:69-113`), après assemblage, sanitizers et plan de cache.
+    writer  prompt=20987  cached=20864  hit=99.4%
+    reader  prompt=21267  cached=21248  hit=99.91%  cost=0.00166 USD
 
-`state.PayloadSlot` garde le dernier payload observé avec sa route : c'est elle qui rend le modèle
-dynamique, puisque c'est celui qui vient de répondre dans la session.
+Real compaction of a 161-message session: 161 down to 103 messages, one auxiliary call,
+11 351 prompt tokens of which 11 264 were cache reads (98.95 %).
 
-## Installation
+## When it does not help
 
-    ln -s ~/local/git/ia/hermes-plugin-cached-compressor ~/.hermes/plugins/cached-compressor
-    # config.yaml
-    context:
-      engine: cached-compressor
-    plugins:
-      enabled: [cached-compressor]
+The design assumes the provider reports cache reads in `usage.prompt_tokens_details.cached_tokens`.
+Some backends return no such field at all. There, the prefix is billed at full price, and resending
+68 000 tokens costs more than the built-in compressor's serialized window.
 
-`plugins.isolation: host` est incompatible : la sous-classe de `ContextCompressor` ne peut pas être
-importée dans ce mode. Le défaut `in_process` (`hermes_cli/config_defaults.py:1730`) est requis.
+The plugin measures instead of assuming. A route that comes back twice without any cache read, on a
+prompt large enough to have been cached, is marked as cache-less for the rest of the process, and
+compaction falls back to the built-in path. One observation is not enough: the provider may simply
+never have seen that exact prefix. Cacheless behaviour is logged:
 
-## État
+    cached-compressor: route without confirmed cache, falling back to the built-in compressor
 
-Phases 0 et 1 terminées. Le cœur (phase 3) est écrit et testé en unité :
+## Requirements
 
-- `state.PayloadSlot` capture le payload fil et sa route à chaque requête (`pre_api_request`) ;
-- `summary.reader_messages` tronque ce payload à la frontière de fenêtre et y ajoute l'instruction,
-  avec deux chemins d'alignement : par index (déterministe, insensible à l'élagage) puis par
-  séquence ;
-- `CachedCompressor._build_summary_prompt` remplace la recopie des tours par un pointeur, ce qui
-  conserve la consigne du parent (budget, gabarit, focus) sans repayer le texte ;
-- `CachedCompressor._call_summary_llm` épingle la route de la session, garde
-  `aux_interrupt_protection`, et reporte l'échec par `RuntimeError` pour laisser la machinerie du
-  parent faire son repli ;
-- le hit réel est journalisé et posé dans la télémétrie de compaction (`cache_read_tokens`,
-  `cache_read_ratio`).
+- a provider with prefix caching, and `cached_tokens` in its usage payload;
+- `plugins.isolation: in_process` (the default). The `host` isolation mode is incompatible: the
+  context engine subclasses Hermes' own compressor class, which cannot be imported across an
+  isolation boundary;
+- Hermes 0.23.0 or newer.
 
-Reste à faire : la mesure en session réelle (tâche 3.3), les garde-fous de configuration, le test
-de contrat des API privées et la documentation d'activation. Voir le plan
-`~/Téléchargements/llm-ia/.hermes/plans/2026-11-08_231044-cache-aware-compaction-plugin.md`.
+## Install
 
-Limite connue : un seul slot, donc une session à la fois ; le clé par `session_id` est à faire.
+From a git checkout:
 
-## Activation
+    git clone https://github.com/<owner>/hermes-plugin-cached-compressor
+    ln -s "$PWD/hermes-plugin-cached-compressor" ~/.hermes/plugins/cached-compressor
 
-Deux entrées, les deux nécessaires :
+Or let Hermes clone it:
 
-    hermes config set context.engine cached-compressor   # le moteur de compaction
-    hermes plugins enable cached-compressor              # le hook pre_api_request
+    hermes plugins install <owner>/hermes-plugin-cached-compressor
 
-Le paquet est alors chargé deux fois, sous deux noms de module. Le slot de payload est donc rangé
-dans un module sentinelle de `sys.modules` (`state._shared_slot`), sinon le hook écrirait dans un
-slot que le moteur ne lit pas.
+Then enable both entry points. They are both required: the engine does the compaction, the plugin
+registers the hook that captures the payload.
 
-## Mesure
+    hermes config set context.engine cached-compressor
+    hermes plugins enable cached-compressor
 
-`probes/cache_hit_live.py` (vrai provider, vraie assemblée de requête) :
+Check it:
 
-    writer (session)   prompt=20987  cached=20864  hit=99.4%
-    reader (plugin)    prompt=21267  cached=21248  hit=99.91%   coût=0.00166 $
+    hermes config get context.engine     # cached-compressor
+    hermes plugins list                  # cached-compressor enabled
 
-Concrètement : sur ~21 000 tokens de contexte, la compaction n'en repaie que ~19. Sans le
-`main_runtime` de session, le même code mesurait 0 % — la requête partait hors du contexte de la
-session.
+## Design
+
+Two entry points in one package, both through `register(ctx)`:
+
+- context engine (`context.engine: cached-compressor`): `CachedCompressor` subclasses the built-in
+  compressor and changes only the summary request;
+- regular plugin (`plugins.enabled`): registers `pre_api_request`, which receives the final wire
+  payload after assembly, sanitizers and the cache plan (`agent/turn_api_request.py`).
+
+`state.PayloadSlot` keeps the last observed payload with its route (provider, model, base URL,
+API mode), per session, so the summary runs with the model that actually answered in that session.
+Session rotation during compaction happens after the summary call, so the captured thread still
+matches.
+
+Because the package is loaded twice, under two module names, the payload slot and the route cache
+tracker live in a `sys.modules` sentinel module (`state._shared_holder`). Otherwise the hook would
+write to a slot the engine never reads.
 
 ## Tests
 
-    python -m pytest tests -q
+    HERMES_SOURCE=~/.hermes/hermes-agent python -m pytest tests -q
+
+48 tests, no network, no API key. `HERMES_SOURCE` points at a Hermes source checkout (the plugin
+imports `agent.*`).
+
+Live probes, which do need a provider key, are in `probes/`:
+
+    HERMES_API_KEY=... python probes/cache_hit_live.py     # writer + reader, real assembly path
+    HERMES_API_KEY=... python probes/compress_live.py      # full compress(), slot and telemetry
+
+## Known limitations
+
+- The plugin relies on parts of Hermes that are not a public plugin surface: the compressor base
+  class, `agent.chat_completion_helpers._iteration_summary_api_messages`,
+  `agent.auxiliary_client.call_llm`. `hermes plugins validate` reports them as warnings. A Hermes
+  upgrade can break it; `hermes.min_version` is declared, and the fallback path keeps compaction
+  working if the contract is not met.
+- Cache accounting is only as good as the provider's usage payload. On providers that do not report
+  cache reads, the plugin steps aside (see above).
