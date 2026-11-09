@@ -112,7 +112,11 @@ write to a slot the engine never reads.
     HERMES_SOURCE=~/.hermes/hermes-agent python -m pytest tests -q
 
 48 tests, no network, no API key. `HERMES_SOURCE` points at a Hermes source checkout (the plugin
-imports `agent.*`).
+imports `agent.*`). CI runs the suite against Hermes `v0.23.0`.
+
+Catalog validation is a manual pre-release check, because the CLI needs a fully installed Hermes:
+
+    hermes plugins validate .
 
 Live probes, which do need a provider key, are in `probes/`:
 
