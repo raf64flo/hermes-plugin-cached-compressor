@@ -6,5 +6,4 @@ license: MIT
 provides_hooks:
   - pre_api_request
   - post_api_request
-hermes:
-  min_version: "0.23.0"
+requires_hermes: ">=0.23.0"
