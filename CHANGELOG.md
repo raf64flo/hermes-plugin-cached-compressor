@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0
+
+- State: `on_session_end` releases the session's slot. It used to live until LRU eviction, holding a
+  whole conversation in memory after the session had ended.
+- State: the budget is now counted in bytes as well as in sessions (64 MiB, 8 sessions). A single
+  oversized transcript is kept rather than evicted, since dropping it would free nothing useful.
+- State: messages are copied one level deep on capture, so the build-in pruner rewriting `content` in
+  place no longer changes what the slot returns. `tool_calls` stay shared, documented.
+- `contract.py`: the private Hermes symbols the plugin needs are declared, and `register()` refuses to
+  install the engine when one is missing or has changed signature, keeping the built-in compressor with
+  an explicit message. `tests/test_contract.py` fails at the first version that moves, and CI runs the
+  suite on the declared minimum plus `main` (allowed to fail).
+- Usage: cache reads are read from every field in use (`prompt_tokens_details.cached_tokens`,
+  `prompt_cache_hit_tokens`, `cache_read_input_tokens`, `cached_content_token_count`), so a DeepSeek,
+  Anthropic or Gemini backend is recognised instead of being taken for a route without cache.
+- `probes/cache_report_check.py` and `docs/PROVIDERS.md`: check a backend in a minute, and know whether
+  the gain is money or prefill time.
+
 ## 0.3.0
 
 - `bench.py --aux-model`: run the built-in arm on a cheaper model, as `auxiliary.compression` does in a
