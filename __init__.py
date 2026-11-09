@@ -35,7 +35,7 @@ from agent.auxiliary_client import (
 )
 from agent.context_compressor import ContextCompressor, _is_refusal_response
 
-from . import state, summary
+from . import cacheability, state, summary
 
 __all__ = ["CachedCompressor", "register"]
 
@@ -116,17 +116,32 @@ class CachedCompressor(ContextCompressor):
             return None
         return wire
 
+    def _prefix_allowed(self) -> bool:
+        """Le mode préfixe ne vaut que sur une route qui facture la relecture de cache."""
+        wire = self._wire_for_session()
+        if wire is None:
+            return False
+        route = cacheability.route_key(wire.get("provider"), wire.get("model"), wire.get("base_url"))
+        if state.TRACKER.prefix_allowed(route):
+            return True
+        logger.info(
+            "cached-compressor: route sans cache confirmé, repli sur le compresseur intégré "
+            "(provider=%r model=%r)", wire.get("provider"), wire.get("model"))
+        return False
+
     def _build_summary_prompt(
         self, content_to_summarize: str, summary_budget: int, focus_topic: Optional[str],
         memory_context: str, has_user_turn: bool,
     ) -> str:
-        if self._wire_for_session() is None:
+        if not self._prefix_allowed():
             return super()._build_summary_prompt(
                 content_to_summarize, summary_budget, focus_topic, memory_context, has_user_turn)
         return super()._build_summary_prompt(
             TURNS_POINTER, summary_budget, focus_topic, memory_context, has_user_turn)
 
     def _call_summary_llm(self, prompt: str, prompt_started_at: float) -> str:
+        if not self._prefix_allowed():
+            return super()._call_summary_llm(prompt, prompt_started_at)
         wire = self._wire_for_session()
         window_end = self._window_end if self._same_shape else None
         messages = summary.reader_messages(wire, self._window, prompt, window_end=window_end)
@@ -212,6 +227,11 @@ def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any]) -> 
         telemetry["cache_read_tokens"] = cached
         telemetry["cache_read_ratio"] = (
             round(cached / prompt_tokens, 4) if isinstance(prompt_tokens, int) and prompt_tokens > 0 else None)
+    # L'observation décide de la suite : une route qui ne rapporte jamais de lecture de cache ne
+    # doit plus payer le préfixe complet (voir cacheability.py).
+    state.TRACKER.record(
+        cacheability.route_key(wire.get("provider"), wire.get("model"), wire.get("base_url")),
+        prompt_tokens, cached)
     logger.info(
         "Compression summary on session prefix: model=%s prompt=%s cached=%s route=%s",
         wire.get("model"), prompt_tokens, cached, wire.get("provider"))
