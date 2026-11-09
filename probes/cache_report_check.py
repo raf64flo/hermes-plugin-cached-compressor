@@ -19,6 +19,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 
 #: Champs connus, dans l'ordre où le plugin les essaie.
@@ -29,17 +30,37 @@ USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like G
 
 
 def _post(base: str, key: str, model: str, messages: list[dict], session: str,
-          max_tokens: int) -> dict:
-    body = {"model": model, "messages": messages, "max_tokens": max_tokens}
-    request = urllib.request.Request(
-        base.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(), method="POST",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "User-Agent": USER_AGENT, "x-opencode-session": session})
-    started = time.monotonic()
-    with urllib.request.urlopen(request, timeout=600) as response:
-        payload = json.loads(response.read())
-    payload["_elapsed_s"] = round(time.monotonic() - started, 2)
-    return payload
+          max_tokens: int, retries: int = 3) -> dict:
+    """POST one chat completion. Honors ``retry-after`` on a 429 (usage-limit window),
+    up to ``retries`` times, capped at two minutes per wait; anything else fails fast."""
+    last_error: urllib.error.HTTPError | None = None
+    for attempt in range(retries + 1):
+        body = {"model": model, "messages": messages, "max_tokens": max_tokens}
+        request = urllib.request.Request(
+            base.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(), method="POST",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                     "User-Agent": USER_AGENT, "x-opencode-session": session})
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=600) as response:
+                payload = json.loads(response.read())
+        except urllib.error.HTTPError as err:
+            if err.code == 429 and attempt < retries:
+                retry_after = err.headers.get("retry-after")
+                try:
+                    delay = min(float(retry_after), 120.0) if retry_after else 15.0
+                except ValueError:
+                    delay = 15.0
+                print(f"  429 (appel {attempt + 1}); retry-after={retry_after!r}, attente {delay:0.0f}s")
+                last_error = err
+                time.sleep(delay)
+                continue
+            err_body = err.read().decode("utf-8", errors="replace")[:400]
+            raise SystemExit(f"HTTP {err.code} {err_body}") from err
+        else:
+            payload["_elapsed_s"] = round(time.monotonic() - started, 2)
+            return payload
+    raise SystemExit(f"HTTP 429 après {retries} retries") from last_error
 
 
 def _as_int(value: object) -> int | None:
