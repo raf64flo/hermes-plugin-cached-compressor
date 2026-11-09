@@ -125,8 +125,8 @@ class CachedCompressor(ContextCompressor):
         if state.TRACKER.prefix_allowed(route):
             return True
         logger.info(
-            "cached-compressor: route sans cache confirmé, repli sur le compresseur intégré "
-            "(provider=%r model=%r)", wire.get("provider"), wire.get("model"))
+            "cached-compressor: route without confirmed cache, falling back to the built-in "
+            "compressor (provider=%r model=%r)", wire.get("provider"), wire.get("model"))
         return False
 
     def _build_summary_prompt(
