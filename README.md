@@ -46,6 +46,26 @@ Full round trip on a real session, through `CachedCompressor._call_summary_llm`:
 Real compaction of a 161-message session: 161 down to 103 messages, one auxiliary call,
 11 351 prompt tokens of which 11 264 were cache reads (98.95 %).
 
+## Head-to-head benchmark
+
+Same model, same transport, both engines running their real `compress()`: four runs over ~20 000 and
+~100 000-token transcripts, billed cost read from the router's own `usage` field.
+
+    arm          cost USD        latency      input tokens   cache hit   summary size
+    built-in     0.0036-0.0088   31-142 s     5 863-8 157    0 %         baseline
+    plugin       0.0032-0.0064   36-60 s      26 017-44 585   0-96 %      -8 to -40 %
+
+    mean over the four runs: -32 % billed cost, -38 % latency
+
+Read that table with its two caveats. The plugin sends 3 to 7 times more input tokens and pays for
+them at the cache price, so the gain depends on the provider actually serving the prefix from cache;
+without it, the larger prefix costs more. And its summary comes out 8 to 40 % shorter, which a
+rubric judge scores below the built-in's on detail: its mean is 19.0/25 against 20.1/25, with two
+stable verdicts for the built-in and two unstable ties.
+
+Protocol, per-run table, the summary-input coverage of both engines, and the reproduction commands:
+[docs/BENCHMARK.md](docs/BENCHMARK.md).
+
 ## When it does not help
 
 The design assumes the provider reports cache reads in `usage.prompt_tokens_details.cached_tokens`.
@@ -71,12 +91,12 @@ never have seen that exact prefix. Cacheless behaviour is logged:
 
 From a git checkout:
 
-    git clone https://github.com/<owner>/hermes-plugin-cached-compressor
+    git clone https://github.com/raf64flo/hermes-plugin-cached-compressor
     ln -s "$PWD/hermes-plugin-cached-compressor" ~/.hermes/plugins/cached-compressor
 
 Or let Hermes clone it:
 
-    hermes plugins install <owner>/hermes-plugin-cached-compressor
+    hermes plugins install raf64flo/hermes-plugin-cached-compressor
 
 Then enable both entry points. They are both required: the engine does the compaction, the plugin
 registers the hook that captures the payload.
