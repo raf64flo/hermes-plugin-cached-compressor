@@ -98,8 +98,12 @@ Answer with JSON only, no prose:
  "better": "A" or "B" or "tie"}"""
 
 
-def build_history(target_tokens: int) -> list[dict]:
-    """Deterministic agent transcript: tool calls, file excerpts, decisions with evidence."""
+def build_history(target_tokens: int, salt: str = "") -> list[dict]:
+    """Deterministic agent transcript: tool calls, file excerpts, decisions with evidence.
+
+    ``salt`` makes the transcript unique: the provider cache is keyed on the bytes sent, so a repeat
+    that reused the same transcript would be served from the cache on the second pass, for both arms.
+    """
     budget = int(target_tokens * CHARS_PER_TOKEN)
     body = "".join(
         f"def handler_{line}(payload):\n"
@@ -112,7 +116,7 @@ def build_history(target_tokens: int) -> list[dict]:
         module = MODULES[index % len(MODULES)]
         messages.append({"role": "user",
                          "content": f"Task {index}: audit src/{module}.py for unbounded retries, "
-                                    f"report with path:line evidence.{(' Run ' + SALT) if SALT else ''}"})
+                                    f"report with path:line evidence.{(' Run ' + salt) if salt else ''}"})
         messages.append({"role": "assistant", "content": "", "tool_calls": [{
             "id": f"call_{index}", "type": "function",
             "function": {"name": "read_file",
@@ -183,9 +187,34 @@ class Transport:
                                   prompt_tokens_details=SimpleNamespace(cached_tokens=cached)))
 
 
-def _make_engine(kind: str) -> object:
+def fetch_prices(base: str, key: str) -> dict:
+    """Read the provider's published price sheet, in USD per million tokens.
+
+    Returns ``{model_id: {"input": x, "cache_read": y, "output": z}}``. Every billed figure these
+    benchmarks report is read back from ``usage``; the sheet is only used to state which prices an
+    arm would pay in a deployment, and to compute the break-even price ratio.
+    """
+    request = urllib.request.Request(
+        f"{base}/models",
+        headers={"Authorization": f"Bearer {key}", "User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        payload = json.loads(response.read())
+    sheet: dict[str, dict] = {}
+    for entry in payload.get("data") or []:
+        text = ((entry.get("cost") or {}).get("text") or {})
+        incoming = text.get("input") or {}
+        outgoing = text.get("output") or {}
+        if incoming.get("price") is None or outgoing.get("price") is None:
+            continue
+        sheet[entry["id"]] = {"input": float(incoming["price"]),
+                              "cache_read": float((incoming.get("cache") or {}).get("read") or 0.0),
+                              "output": float(outgoing["price"])}
+    return sheet
+
+
+def _make_engine(kind: str, model: str) -> object:
     cls = cc.CachedCompressor if kind == "plugin" else ContextCompressor
-    return cls(model=MODEL, provider=PROVIDER, api_key=KEY, base_url=BASE,
+    return cls(model=model, provider=PROVIDER, api_key=KEY, base_url=BASE,
                api_mode="chat_completions", config_context_length=200_000,
                quiet_mode=True, protect_last_n=20)
 
@@ -198,16 +227,16 @@ def _summary_of(compacted: list[dict]) -> str:
     return ""
 
 
-def run_arm(kind: str, messages: list[dict]) -> dict:
+def run_arm(kind: str, messages: list[dict], model: str) -> dict:
     import agent.context_compressor as context_module
 
-    transport = Transport()
+    transport = Transport(model=model)
     original_context = context_module.call_llm
     original_plugin = cc.call_llm
     # Both entry points resolve ``call_llm`` from their own module globals.
     context_module.call_llm = transport
     cc.call_llm = transport
-    engine = _make_engine(kind)
+    engine = _make_engine(kind, model)
     try:
         started = time.monotonic()
         compacted = engine.compress(list(messages), force=True)
@@ -221,6 +250,7 @@ def run_arm(kind: str, messages: list[dict]) -> dict:
     costs = [call["cost_usd"] for call in transport.calls]
     return {
         "arm": kind,
+        "model": model,
         "calls": len(transport.calls),
         "prompt_tokens": prompt,
         "cached_tokens": cached,
@@ -303,6 +333,9 @@ def main() -> int:
     parser.add_argument("--tokens", type=int, action="append", required=True,
                         help="transcript size in tokens, repeatable")
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--aux-model", default=None,
+                        help="model the built-in arm calls, as auxiliary.compression would: the plugin "
+                             "keeps the session model, so this measures a realistic deployment")
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--out", default=os.path.join(REPO, "bench", "results"))
     args = parser.parse_args()
@@ -312,24 +345,39 @@ def main() -> int:
     agent._cached_system_prompt = SYSTEM
     agent.tools = TOOLS
 
-    report = {"model": MODEL, "provider": PROVIDER, "runs": []}
+    report = {"model": MODEL, "aux_model": args.aux_model, "provider": PROVIDER, "prices": {},
+              "runs": []}
+    builtin_model = args.aux_model or MODEL
+    try:
+        sheet = fetch_prices(BASE, KEY)
+    except Exception as error:  # a missing price sheet must not stop a measurement
+        print(f"price sheet unavailable: {error!r}")
+        sheet = {}
+    report["prices"] = {name: sheet[name] for name in (MODEL, builtin_model) if name in sheet}
+    print(f"session model: {MODEL}")
+    if args.aux_model:
+        print(f"built-in arm:  {builtin_model} (as auxiliary.compression would route it)")
     for target in args.tokens:
-        messages = build_history(target)
-        wire = _build_api_kwargs_for_mode(agent, _iteration_summary_api_messages(agent, messages))
-        warming = warm(Transport(), wire)
-        print(f"\n=== transcript ~{target} tokens === (prefix warm: {warming['hit']:.1%} "
-              f"after {len(warming['attempts'])} attempt(s))")
-        if warming["hit"] < 0.9:
-            print("  warning: the prefix never entered the provider cache, the prefix arm would be")
-            print("           measured without a cache: the run is not a valid comparison")
-        cc.state.record_payload(
-            request=wire, request_messages=wire["messages"], model=MODEL, provider=PROVIDER,
-            base_url=BASE, api_mode="chat_completions", conversation_history=messages,
-            session_id="bench")
-        for _ in range(args.repeats):
-            builtin = run_arm("builtin", messages)
-            plugin = run_arm("plugin", messages)
-            run = {"target_tokens": target, "warm": warming,
+        for repeat in range(args.repeats):
+            # Each repeat needs its own bytes: a warm prefix is only meaningful if the transcript it
+            # covers has never been posted, for either arm.
+            salt = f"{SALT}-r{repeat}" if args.repeats > 1 else SALT
+            messages = build_history(target, salt)
+            wire = _build_api_kwargs_for_mode(
+                agent, _iteration_summary_api_messages(agent, messages))
+            warming = warm(Transport(), wire)
+            print(f"\n=== transcript ~{target} tokens, repeat {repeat + 1}/{args.repeats} === "
+                  f"(prefix warm: {warming['hit']:.1%} after {len(warming['attempts'])} attempt(s))")
+            if warming["hit"] < 0.9:
+                print("  warning: the prefix never entered the provider cache, the prefix arm would be")
+                print("           measured without a cache: the run is not a valid comparison")
+            cc.state.record_payload(
+                request=wire, request_messages=wire["messages"], model=MODEL, provider=PROVIDER,
+                base_url=BASE, api_mode="chat_completions", conversation_history=messages,
+                session_id="bench")
+            builtin = run_arm("builtin", messages, builtin_model)
+            plugin = run_arm("plugin", messages, MODEL)
+            run = {"target_tokens": target, "repeat": repeat, "salt": salt, "warm": warming,
                    "arms": {"builtin": builtin, "plugin": plugin}}
             if not args.no_judge:
                 try:
