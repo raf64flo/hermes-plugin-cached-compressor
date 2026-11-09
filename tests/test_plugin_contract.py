@@ -78,11 +78,11 @@ def test_collecteur_du_moteur_ne_leve_pas() -> None:
     assert ctx.engine.name == "cached-compressor"  # type: ignore[attr-defined]
 
 
-def test_contexte_plugin_ne_pose_que_le_hook() -> None:
+def test_contexte_plugin_ne_pose_que_les_hooks() -> None:
     module = load_plugin()
     ctx = HookOnlyCtx()
     module.register(ctx)  # type: ignore[attr-defined]
-    assert set(ctx.hooks) == {"pre_api_request"}
+    assert set(ctx.hooks) == {"pre_api_request", "post_api_request"}
 
 
 def test_decouverte_par_le_chargeur_reel() -> None:
