@@ -24,6 +24,28 @@ the cache: stripping content, canonicalizing `tool_calls` arguments, or prependi
 at send time is enough to miss. The plugin therefore captures the payload that was just sent, through
 the `pre_api_request` hook, and reuses it.
 
+## Should you install it?
+
+Three questions, all answerable with the numbers further down:
+
+1. Does your backend report cache reads? The one-minute check is
+   `python probes/cache_report_check.py`. If it reports nothing, the prefix mode can only cost,
+   and the plugin steps aside on its own, so there is nothing to gain from installing.
+2. What is `R`, the session model's price over the auxiliary model's? The measured break-even is
+   `R_max = 0.7-0.8`, so the plugin saves money only when the session model is cheaper than its
+   auxiliary, which is rare:
+   - `R ~ 1` (both engines on the same model): the plugin saves 32 % of billed cost and 45 % of
+     latency, and the summary is about as good (19.6/25 against 19.9/25 on the rubric judge).
+   - `R > 1` (a cheaper auxiliary, the usual deployment): the plugin costs 1.9 to 2.6 times more
+     but scores 24.2/25 against 15.2/25. It buys a better summary, not a lighter bill.
+3. How long is the transcript? Cache amortisation grows with size: with output pinned, the
+   summary call costs 0.40 of the built-in's at 20k and 0.78 at 100k when the prefix is served,
+   and 2.7 to 3.0 times as much when it is not. On short sessions the built-in's small prompt
+   wins by default.
+
+Net: same-priced model and long sessions, install; cheap auxiliary, only for the summary quality;
+no cache reporting, do not.
+
 ## Measured results
 
 Provider with prefix-cache reporting, 20 987-token history, 162 messages, 12-message protected tail,
@@ -214,7 +236,11 @@ Live probes, which do need a provider key, are in `probes/`:
 - The plugin relies on parts of Hermes that are not a public plugin surface: the compressor base
   class, `agent.chat_completion_helpers._iteration_summary_api_messages`,
   `agent.auxiliary_client.call_llm`. `hermes plugins validate` reports them as warnings. A Hermes
-  upgrade can break it; `hermes.min_version` is declared, and the fallback path keeps compaction
-  working if the contract is not met.
+  upgrade can break it: `requires_hermes: ">=0.23.0"` in `plugin.yaml` makes Hermes itself refuse
+  to load the plugin on an older core, and the `register()` contract check keeps compaction working
+  (built-in compressor, explicit log line) if a private symbol has moved.
 - Cache accounting is only as good as the provider's usage payload. On providers that do not report
   cache reads, the plugin steps aside (see above).
+
+Tested range: 0.23.0 (declared minimum, CI) up to the current `main` (CI, allowed to fail). There is
+no manifest field for a tested maximum, so the CI matrix is the record.
