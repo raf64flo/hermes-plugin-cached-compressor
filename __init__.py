@@ -122,6 +122,7 @@ class CachedCompressor(ContextCompressor):
             with aux_interrupt_protection():
                 response = call_llm(
                     task="compression", messages=messages, tools=wire.get("tools") or None,
+                    main_runtime=summary.main_runtime(wire, self.api_key),
                     route_info=route_info, latency_info=latency, **route)
         finally:
             record = getattr(self, "_record_aux_compression_call", None)

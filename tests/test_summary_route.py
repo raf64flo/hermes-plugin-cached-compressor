@@ -98,6 +98,33 @@ def test_index_of_par_identite() -> None:
     assert summary.index_of(transcript, []) is None
 
 
+def test_main_runtime_porte_la_session() -> None:
+    runtime = summary.main_runtime({**WIRE, "session_id": "s9"}, "sk-test")
+    assert runtime["model"] == "m-session"
+    assert runtime["provider"] == "p-session"
+    assert runtime["session_id"] == "s9"
+    assert runtime["api_key"] == "sk-test"
+    assert summary.main_runtime(None, None)["session_id"] == ""
+
+
+def test_le_contexte_de_session_part_avec_l_appel(monkeypatch) -> None:
+    SLOT.record(request={"messages": WIRE["messages"]}, request_messages=WIRE["messages"],
+                model="m-session", provider="p-session", base_url="https://exemple/v1",
+                api_mode="chat_completions", session_id="s9")
+    seen: dict = {}
+
+    def fake_call_llm(**kwargs):
+        seen.update(kwargs)
+        return _response()
+
+    monkeypatch.setattr("cached_compressor_under_test.call_llm", fake_call_llm)
+    engine = _engine()
+    engine._window = WINDOW
+    engine._call_summary_llm("INSTRUCTION", 0.0)
+    assert seen["main_runtime"]["session_id"] == "s9"
+    assert seen["main_runtime"]["model"] == "m-session"
+
+
 def test_route_doit_correspondre_a_la_session() -> None:
     assert summary.route_matches(WIRE, "m-session", "p-session")
     assert not summary.route_matches(WIRE, "autre-modele", "p-session")

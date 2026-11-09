@@ -45,6 +45,24 @@ def _same_role(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return str(a.get("role") or "") == str(b.get("role") or "")
 
 
+def main_runtime(wire: Optional[dict[str, Any]], api_key: str | None) -> dict[str, str]:
+    """Contexte de session transmis à ``call_llm``, comme le fait le parent.
+
+    Sans lui, l'appel auxiliaire n'est pas rendu dans le contexte de la session (route résolue,
+    affinité de session, politique d'usage des données) : la requête peut atterrir sur une autre
+    réplique et manquer le cache, tout en ayant l'air correcte.
+    """
+    wire = wire or {}
+    return {
+        "model": wire.get("model") or "",
+        "provider": wire.get("provider") or "",
+        "base_url": wire.get("base_url") or "",
+        "api_key": api_key or "",
+        "api_mode": wire.get("api_mode") or "",
+        "session_id": wire.get("session_id") or "",
+    }
+
+
 def reader_messages(
     wire: Optional[dict[str, Any]], window: Optional[list[dict[str, Any]]], prompt: str,
     window_end: Optional[int] = None,
