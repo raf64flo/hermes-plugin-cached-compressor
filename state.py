@@ -41,6 +41,7 @@ class PayloadSlot:
                 "api_mode": hook_kwargs.get("api_mode"),
                 "session_id": hook_kwargs.get("session_id"),
                 "history_len": len(hook_kwargs.get("conversation_history") or []),
+                "message_count": len(messages),
                 "recorded_at": time.time(),
             }
 

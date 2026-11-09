@@ -58,13 +58,26 @@ importée dans ce mode. Le défaut `in_process` (`hermes_cli/config_defaults.py:
 
 ## État
 
-Phase 1 : squelette, manifeste, contrat de chargement testé. La capture est branchée ; la
-construction de la requête de résumé (`wire_cut`, replis) reste à faire, voir le plan
+Phases 0 et 1 terminées. Le cœur (phase 3) est écrit et testé en unité :
+
+- `state.PayloadSlot` capture le payload fil et sa route à chaque requête (`pre_api_request`) ;
+- `summary.reader_messages` tronque ce payload à la frontière de fenêtre et y ajoute l'instruction,
+  avec deux chemins d'alignement : par index (déterministe, insensible à l'élagage) puis par
+  séquence ;
+- `CachedCompressor._build_summary_prompt` remplace la recopie des tours par un pointeur, ce qui
+  conserve la consigne du parent (budget, gabarit, focus) sans repayer le texte ;
+- `CachedCompressor._call_summary_llm` épingle la route de la session, garde
+  `aux_interrupt_protection`, et reporte l'échec par `RuntimeError` pour laisser la machinerie du
+  parent faire son repli ;
+- le hit réel est journalisé et posé dans la télémétrie de compaction (`cache_read_tokens`,
+  `cache_read_ratio`).
+
+Reste à faire : la mesure en session réelle (tâche 3.3), les garde-fous de configuration, le test
+de contrat des API privées et la documentation d'activation. Voir le plan
 `~/Téléchargements/llm-ia/.hermes/plans/2026-11-08_231044-cache-aware-compaction-plugin.md`.
 
-Limite connue : un seul slot pour l'instant, donc une session à la fois. Le clé par `session_id`
-arrive avec la tâche 3.2.
+Limite connue : un seul slot, donc une session à la fois ; le clé par `session_id` est à faire.
 
 ## Tests
 
-    cd ~/.hermes/hermes-agent && python -m pytest ~/local/git/ia/hermes-plugin-cached-compressor/tests
+    python -m pytest tests -q
