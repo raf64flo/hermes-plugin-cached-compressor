@@ -23,19 +23,20 @@ consecutive requests report at least 90 % cache reads. The judge scores the two 
 five criteria, twice, once per label order, and a disagreement between the orders marks the verdict
 unstable.
 
-    pass       size     hit   in x     out     b cost     p cost    cost     lat  judge (b/p)
-    20261109  20000   93.0%    3.2    -36%   0.007195   0.004147  -42.4%  -38.9%  24.0/15.5 builtin
-    20261109 100000   95.8%    7.4     +3%   0.003609   0.003210  -11.1%  +12.7%  17.0/20.0 tie
-    20261109  20000    0.0%    3.2    -67%   0.008802   0.006402  -27.3%  -55.2%  18.5/22.0 tie
-    20261109 100000   59.4%    7.3    -81%   0.008134   0.004199  -48.4%  -68.5%  21.0/18.5 builtin
-    20261109  20000   93.2%    3.2    -70%   0.009171   0.002704  -70.5%  -71.0%  23.0/17.5 builtin
-    20261109 100000   95.9%    7.3    -68%   0.008392   0.002807  -66.6%  -67.6%  15.5/25.0 plugin
-    20261109  20000    0.0%    3.2    -49%   0.007011   0.006862   -2.1%  -46.3%  20.5/21.5 tie
-    20261109 100000   59.4%    7.3    -34%   0.004413   0.005100  +15.6%  -27.5%  19.5/17.0 tie
+    pass               size     hit   in x     out     b cost     p cost    cost     lat  judge (b/p)
+    20261109-151211   20000   93.0%    3.2    -36%   0.007195   0.004147  -42.4%  -38.9%  24.0/15.5 builtin
+    20261109-151211  100000   95.8%    7.4     +3%   0.003609   0.003210  -11.1%  +12.7%  17.0/20.0 tie (unstable)
+    20261109-152604   20000    0.0%    3.2    -67%   0.008802   0.006402  -27.3%  -55.2%  18.5/22.0 tie (unstable)
+    20261109-152604  100000   59.4%    7.3    -81%   0.008134   0.004199  -48.4%  -68.5%  21.0/18.5 builtin
+    20261109-161006   20000   93.2%    3.2    -70%   0.009171   0.002704  -70.5%  -71.0%  23.0/17.5 builtin
+    20261109-161006  100000   95.9%    7.3    -68%   0.008392   0.002807  -66.6%  -67.6%  15.5/25.0 plugin
+    20261109-164354   20000    0.0%    3.2    -49%   0.007011   0.006862   -2.1%  -46.3%  20.5/21.5 tie (unstable)
+    20261109-164354  100000   59.4%    7.3    -34%   0.004413   0.005100  +15.6%  -27.5%  19.5/17.0 tie (unstable)
 
     runs: 8   plugin cache served (>=90 %): 4
       all runs            cost  -31.6 %   latency -45.3 %   output -50.3 %   input x 5.2
       prefix served       cost  -47.6 %   latency -41.2 %   output -42.9 %   input x 5.3
+      cost spread         -70.5 % to +15.6 %   median -34.9 %   sd 30.9
 
     judge mean: built-in 19.9/25   plugin 19.6/25
     verdicts: builtin 3, plugin 1, tie (unstable) 4
@@ -43,11 +44,12 @@ unstable.
 `hit` is the share of the plugin's prompt billed at the cache price, `in x` the ratio of prompt tokens
 sent by the plugin to prompt tokens sent by the built-in, `out` the change in output tokens.
 
-Three things to read there. Cost and latency favour the plugin in 7 runs out of 8, by 32 % and 45 %
-on average. The losing run is the one where the prefix was not served from cache; cost then rises
-15.6 %. And the judge cannot separate the two engines: 19.9 against 19.6 out of 25, with half the
-verdicts flipping when the labels are swapped, which is what a rubric at the edge of noise looks
-like. The plugin's summaries are half the size on average.
+Three things to read there. Cost and latency favour the plugin in 7 runs out of 8, by 32 % and 45 % on
+average, with a wide spread (-2 % to -70 % on cost) because the router's decision to serve the prefix
+dominates the difference. The losing run is the one served at only 59 %: cost then rises 15.6 %. And
+the judge cannot separate the two engines: 19.9 against 19.6 out of 25, with half the verdicts
+flipping when the labels are swapped, which is what a rubric at the edge of noise looks like. The
+plugin's summaries are half the size on average.
 
 ## 2. Pinned output (input only)
 
@@ -56,9 +58,10 @@ summary, the plugin 2 300 to 6 300. This variant removes it. Each engine's summa
 captured with a stub transport (no network), then both payloads are posted with `max_tokens=256`.
 With the output pinned, the difference in the bill comes from the prompt alone.
 
-The built-in payload is posted cold, because it is: its serialized window is new text at every
-compaction, so the provider has never seen it. The plugin's prefix, by contrast, was just sent by the
-main loop, so it starts warm, as in production.
+The built-in payload is posted as its engine builds it, with no warm-up: cold at 20 000 tokens, and
+33.3 % cached in three of the seven passes at 100 000 tokens, which the harness does not control (its
+6 141-token window sometimes matches a prefix the router still holds). The plugin's prefix, by
+contrast, was just sent by the main loop, so it starts warm, as in production.
 
       size  b prompt   b hit     b cost  p prompt   p hit     p cost   p/b
      20000      8157    0.0%   0.001377     26094   93.2%   0.000493  0.36
@@ -76,8 +79,8 @@ main loop, so it starts warm, as in production.
      20000      8157    0.0%   0.001377     26094    0.0%   0.004068  2.95
     100000      6141    0.0%   0.001075     44585   59.4%   0.002946  2.74
 
-    mean p/b: 20000 -> 1.13 (0.40 on the six rows served at >=85 %)
-              100000 -> 1.34 (0.78 on the six rows served at >=85 %)
+    mean p/b: 20000 -> 1.13 (0.40 on the five rows served at >=85 %)
+              100000 -> 1.34 (0.78 on the five rows served at >=85 %)
 
 So the cache effect, isolated, is a factor 2.5 down to 1.3 in the plugin's favour when the prefix is
 served, and a factor 2.7 to 3.0 against it when it is not. Everything rests on that hit rate, which
@@ -90,10 +93,12 @@ Two causes, both measured.
 
 **The instruction tail is not cacheable.** The plugin sends the session prefix followed by the
 summary instruction; the instruction was never part of the conversation, so it can never match.
-Compared against what the main loop actually sent, the payload is identical up to 74 443 of 81 467
-characters at 20 000 tokens (91.4 %) and 127 077 of 138 679 at 100 000 tokens (91.6 %), the rest
-being the instruction. That is the ceiling of the hit rate, and it shows in the table: 93 %, 95.8 %,
-95.9 %.
+Compared against what the main loop actually sent, the payload is identical up to 74 443 of 82 397
+characters at 20 000 tokens (90.3 %) and 127 077 of 138 679 at 100 000 tokens (91.6 %), the rest
+being the instruction. Those are character shares, and they understate the hit the provider reports:
+the transcript's code and path excerpts pack more tokens per character than the instruction's prose,
+so the instruction takes only 4 to 8 % of the payload's tokens. It still caps the hit rate, and the
+cap shows in the table: 93 %, 95.8 %, 95.9 %.
 
 **The provider does not always serve what it just accepted.** The same payload, sent after a warm
 loop that already reported two consecutive hits, sometimes comes back with zero cached tokens.
@@ -104,14 +109,17 @@ cold, and any request issued inside that window pays full price. Nothing on the 
 ## The two engines do not read the same thing
 
 This explains the asymmetry in the cost columns. On the 100 000-token transcript (413 messages,
-361 633 characters) the built-in path summarized 134 records truncated to 14 039 characters, 4 % of
-the history, because it bounds each record to a slice of `_SUMMARY_INPUT_MAX_CHARS = 160_000`
-(`agent/context_compressor.py:836`, `:3640`). The plugin sent the 43 309-token prefix. On the
-20 000-token transcript nothing is elided (74 of 74 records, 20 606 characters).
+361 633 characters) the built-in summarized 134 records for 14 039 characters in total, 3.9 % of the
+history. The bound is not a sampling decision: before summarizing, its own pruning had already
+replaced 97 of those 134 records, all tool results, with the placeholder `[Old tool output cleared to
+save context space]` (`agent/context_compressor.py:838`, `_prune_old_tool_results` at `:3274`). The
+block is also capped at `_SUMMARY_INPUT_MAX_CHARS = 160_000` (`:836`, `:3640`), but that cap did not
+bind here: nothing was omitted. On the 20 000-token transcript the built-in read 74 records for
+20 606 characters, 28 % of the history, with 15 pruned tool results. The plugin sent the 43 309-token
+prefix instead.
 
-The built-in is cheap partly because it looks at a fraction of the session. That is also why it wins
-the rubric on the 20 000-token runs and not on the 100 000-token ones: at that size it summarizes a
-truncated sample, and its evidence score drops.
+The built-in is cheap partly because it does not read most of the session: it summarizes a bounded
+window, and the old tool output inside that window reaches the summarizer as a one-line placeholder.
 
 In one line: the plugin compacts for about a third less, faster, over the real conversation instead
 of a bounded sample, and writes a terser checkpoint, with the whole saving resting on the provider
@@ -119,9 +127,9 @@ serving the prefix from cache.
 
 ## Caveats
 
-- One provider and its own billed prices (cache reads at 10 % of input here); a provider that reports
-  no cache reads at all is handled by the fallback described in the README.
-- n = 4 per size for the whole-compaction experiment, n = 6 per size for the pinned one. The judge is
+- One provider and its own billed prices (cache reads at 2 % of input here, derived from its bills); a
+  provider that reports no cache reads at all is handled by the fallback described in the README.
+- n = 4 per size for the whole-compaction experiment, n = 7 per size for the pinned one. The judge is
   one model at temperature 0, and it disagrees with itself across label orders on half the runs.
 - In a real deployment the built-in path calls `auxiliary.compression`, often a cheaper model than
   the session's. Both arms call the same model here to isolate the cache, so the absolute dollars

@@ -35,8 +35,8 @@ payload built by Hermes' own assembly path (`_iteration_summary_api_messages` th
     A  reader, real path            19 690   19 584  99.5 %   design validated
     B  reader, hand-rebuilt         19 803        0   0.0 %   why rebuilding is banned
 
-    effective A = 106 + 0.1 x 19 584 = 2 064 against 22 346 at full price, ratio 0.092
-    (0.1 is this provider's cache-read multiplier; substitute your own)
+    effective A = 106 + 0.02 x 19 584 = 498, against 19 690 + 2 656 = 22 346 tokens at full price, ratio 0.022
+    (0.02 is this provider's cache-read multiplier, derived from its own bills; substitute your own)
 
 Full round trip on a real session, through `CachedCompressor._call_summary_llm`:
 
@@ -44,7 +44,7 @@ Full round trip on a real session, through `CachedCompressor._call_summary_llm`:
     reader  prompt=21267  cached=21248  hit=99.91%  cost=0.00166 USD
 
 Real compaction of a 161-message session: 161 down to 103 messages, one auxiliary call,
-11 351 prompt tokens of which 11 264 were cache reads (98.95 %).
+11 351 prompt tokens of which 11 264 were cache reads (99.2 %).
 
 ## Head-to-head benchmark
 
@@ -53,16 +53,17 @@ Same model, same transport, both engines running their real `compress()`: eight 
 
     arm          cost USD        latency      input tokens   cache hit   summary size
     built-in     0.0036-0.0092   31-148 s     5 863-8 157    0 %         baseline
-    plugin       0.0027-0.0069   28-79 s      26 017-44 585   0-96 %      half the size
+    plugin       0.0027-0.0069   27.6-79.2 s  26 017-44 585   0-96 %      half the size
 
     mean over the eight runs: -32 % billed cost, -45 % latency
     the four runs where the provider served the prefix: -48 % billed cost
 
-Read that table with its two caveats. The plugin sends 3 to 7 times more input tokens and pays for
-them at the cache price, so the gain depends on the provider actually serving the prefix from cache;
-without it, the larger prefix costs more (the losing run is one of those, +15.6 %). And its summary
-comes out about half as long, which the rubric judge cannot score apart from the built-in's: 19.6/25
-against 19.9/25, with half the verdicts flipping when the labels are swapped.
+Read that table with its two caveats. The plugin sends 3.2 to 7.4 times more input tokens and pays
+for them at the cache price, so the gain depends on the provider actually serving the prefix from
+cache. The one losing run was served at 59 % and cost 15.6 % more; the two runs where nothing was
+served at all still ended 27 % and 2 % cheaper, because the built-in wrote two to three times more
+output. And its summary comes out about half as long, which the rubric judge cannot score apart from
+the built-in's: 19.6/25 against 19.9/25, with half the verdicts flipping when the labels are swapped.
 
 A second experiment pins the output at 256 tokens for both engines, so the bill isolates the prompt:
 the plugin's call then costs 0.40 of the built-in's at 20k and 0.78 at 100k when the prefix is
