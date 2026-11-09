@@ -16,7 +16,9 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # Hermes gates some dependencies on 3.14 (ruamel.yaml) while importing them on every
+          # version, so the job runs the interpreter Hermes is actually developed against.
+          python-version: "3.14"
 
       - name: Clone Hermes at the declared minimum version
         run: git clone --depth 1 --branch "$HERMES_REF" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
