@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `plugin.yaml`: the version gate now uses `requires_hermes: ">=0.23.0"`, the field Hermes actually
+  reads. The previous `hermes.min_version` block was never loaded (verified against the manifest
+  parser: the `hermes` key is reserved but unconsumed for native `plugin.yaml` files), so the gate
+  did not exist; on an older core the plugin loaded and the `register()` contract check was the
+  only protection.
+- README: "Should you install it?" decision section, built on the measured break-even; the tested
+  range (0.23.0 up to `main`, CI matrix) is stated where the version gate is documented.
+- Release: tags `v0.3.0` and `v0.4.0` added; changelog sections dated.
 - Cacheability guard hardening: `post_api_request` now feeds the guard from the main loop's usage,
   so a backend that never serves from cache is recognised before the first compaction, at zero cost
   in calls (the plugin's own summary calls go through the auxiliary path, no feedback loop).
@@ -10,8 +18,10 @@
 - `force_builtin` setting: permanent fallback to the built-in compressor, for backends known not to
   cache. Unset by default; a clear log line marks the forced fallback.
 - README: new "Tuning" section; test count and CI policy brought up to date.
+- `probes/`: the report probe honors `retry-after` on a 429, and `cache_write_sweep.py` measures
+  the cache write window (0/2/5/10 s) for the no-sleep decision.
 
-## 0.4.0
+## 0.4.0 (2026-11-09)
 
 - State: `on_session_end` releases the session's slot. It used to live until LRU eviction, holding a
   whole conversation in memory after the session had ended.
@@ -29,7 +39,7 @@
 - `probes/cache_report_check.py` and `docs/PROVIDERS.md`: check a backend in a minute, and know whether
   the gain is money or prefill time.
 
-## 0.3.0
+## 0.3.0 (2026-11-09)
 
 - `bench.py --aux-model`: run the built-in arm on a cheaper model, as `auxiliary.compression` does in a
   deployment, while the plugin keeps the session model. The run records the provider's published
@@ -42,7 +52,7 @@
   plugin costs 1.9 to 2.6 times more and scores better; the break-even sits at an auxiliary price
   ratio of 0.7 to 0.8, so the cost saving needs a session model cheaper than its auxiliary.
 
-## 0.2.2
+## 0.2.2 (2026-11-09)
 
 - Docs: the cache-read multiplier was stated as 10 % of the input price; the bills say 2 %
   (`docs/BENCHMARK.md`, `README.md`), so the worked example drops from 0.092 to 0.022.
@@ -54,7 +64,7 @@
 - The cache-less fallback message is now English, as the README already quoted it.
 - `bench/report.py`: the `pass` column shows date and time, not the date alone.
 
-## 0.2.1
+## 0.2.1 (2026-11-09)
 
 - Head-to-head benchmark against the built-in compressor (`bench/bench.py`, 8 runs): same model, same
   transport, billed cost, blind rubric judge, warm-cache guard.
@@ -64,14 +74,14 @@
 - Protocol, results and caveats: `docs/BENCHMARK.md`.
 - README: install commands point at the published repository.
 
-## 0.2.0
+## 0.2.0 (2026-11-09)
 
 - Fall back to the built-in compressor on routes that do not report cache reads, instead of replaying
   the full prefix at input price (`cacheability.py`).
 - Declare the `pre_api_request` hook in `plugin.yaml`, so `hermes plugins validate` passes.
 - English README, MIT licence file, CI workflow.
 
-## 0.1.0
+## 0.1.0 (2026-11-09)
 
 - Context engine that summarizes from the session prefix and its own model: payload capture through
   `pre_api_request`, window alignment by index then by sequence, session-scoped payload slot,
