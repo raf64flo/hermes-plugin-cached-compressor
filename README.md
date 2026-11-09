@@ -78,6 +78,17 @@ de contrat des API privées et la documentation d'activation. Voir le plan
 
 Limite connue : un seul slot, donc une session à la fois ; le clé par `session_id` est à faire.
 
+## Activation
+
+Deux entrées, les deux nécessaires :
+
+    hermes config set context.engine cached-compressor   # le moteur de compaction
+    hermes plugins enable cached-compressor              # le hook pre_api_request
+
+Le paquet est alors chargé deux fois, sous deux noms de module. Le slot de payload est donc rangé
+dans un module sentinelle de `sys.modules` (`state._shared_slot`), sinon le hook écrirait dans un
+slot que le moteur ne lit pas.
+
 ## Mesure
 
 `probes/cache_hit_live.py` (vrai provider, vraie assemblée de requête) :

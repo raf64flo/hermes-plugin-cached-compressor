@@ -10,8 +10,10 @@ Une seule session écrit ce slot : il est remplacé à chaque requête, jamais e
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
+import types
 from typing import Any
 
 
@@ -54,7 +56,29 @@ class PayloadSlot:
             self._data = None
 
 
-SLOT = PayloadSlot()
+_SHARED_HOLDER = "_hermes_cached_compressor_shared"
+
+
+def _shared_slot() -> "PayloadSlot":
+    """Slot unique du processus, même si le paquet est importé deux fois.
+
+    Hermes peut charger ce paquet par deux chemins distincts : le moteur de contexte
+    (``plugins/context_engine`` -> ``_hermes_user_context_engine.cached-compressor``) et le plugin
+    ordinaire (``plugins.enabled`` -> ``plugins.cached_compressor``). Deux imports, deux modules,
+    donc deux ``SLOT`` : le hook écrirait dans l'un et le moteur lirait l'autre, sans rien dire.
+    Le slot est donc rangé dans un module sentinelle de ``sys.modules``.
+    """
+    holder = sys.modules.get(_SHARED_HOLDER)
+    if holder is None or getattr(holder, "slot", None) is None:
+        # Pas de isinstance : la classe PayloadSlot diffère entre deux imports du paquet, et le
+        # contrôle recréait alors un slot au lieu de partager celui du premier import.
+        holder = types.ModuleType(_SHARED_HOLDER)
+        holder.slot = PayloadSlot()  # type: ignore[attr-defined]
+        sys.modules[_SHARED_HOLDER] = holder
+    return holder.slot  # type: ignore[attr-defined]
+
+
+SLOT = _shared_slot()
 
 
 def record_payload(**hook_kwargs: Any) -> None:
