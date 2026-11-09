@@ -152,6 +152,27 @@ Check it:
     hermes config get context.engine     # cached-compressor
     hermes plugins list                  # cached-compressor enabled
 
+## Tuning
+
+Nothing is tuned by default; the base policy is: unknown route runs the prefix mode, and the
+observation decides. One observation is always on; two settings are optional, read from
+`plugins.entries.cached-compressor.settings` at load time, and ignored when unreadable:
+
+- **Free pre-diagnostic.** The plugin also registers `post_api_request`, which receives the main
+  loop's usage with the cache read already normalized (`cache_read_tokens` covers the OpenAI,
+  Anthropic and DeepSeek spellings). A large prompt answered with zero cache read is a strike on the
+  route, at zero cost in calls, so a backend that does not cache is recognised before the first
+  compaction instead of paying one full-price transcript to find out. The plugin's own summary calls
+  go through the auxiliary path, so there is no feedback loop.
+- `min_cache_ratio: 0.9` — profitability threshold, in `0..1`. When set, a route whose observed
+  hit rate over its last eight large measurements is below the threshold is denied the prefix mode
+  even without strikes. No threshold (the default) keeps the base policy: strikes only.
+- `force_builtin: true` — permanent fallback to the built-in compressor, for backends known not to
+  cache (a local vLLM, for instance): the prefix can only cost, and the built-in prompt is small.
+
+    hermes config set plugins.entries.cached-compressor.settings.min_cache_ratio 0.9
+    hermes config set plugins.entries.cached-compressor.settings.force_builtin true
+
 ## Design
 
 Two entry points in one package, both through `register(ctx)`:
@@ -159,7 +180,8 @@ Two entry points in one package, both through `register(ctx)`:
 - context engine (`context.engine: cached-compressor`): `CachedCompressor` subclasses the built-in
   compressor and changes only the summary request;
 - regular plugin (`plugins.enabled`): registers `pre_api_request`, which receives the final wire
-  payload after assembly, sanitizers and the cache plan (`agent/turn_api_request.py`).
+  payload after assembly, sanitizers and the cache plan (`agent/turn_api_request.py`), and
+  `post_api_request`, which feeds the route cacheability guard from the main loop's usage.
 
 `state.PayloadSlot` keeps the last observed payload with its route (provider, model, base URL,
 API mode), per session, so the summary runs with the model that actually answered in that session.
@@ -174,8 +196,9 @@ write to a slot the engine never reads.
 
     HERMES_SOURCE=~/.hermes/hermes-agent python -m pytest tests -q
 
-48 tests, no network, no API key. `HERMES_SOURCE` points at a Hermes source checkout (the plugin
-imports `agent.*`). CI runs the suite against Hermes `v0.23.0`.
+78 tests, no network, no API key. `HERMES_SOURCE` points at a Hermes source checkout (the plugin
+imports `agent.*`). CI runs the suite against the declared minimum (`v0.23.0`) and against `main`,
+the latter allowed to fail.
 
 Catalog validation is a manual pre-release check, because the CLI needs a fully installed Hermes:
 

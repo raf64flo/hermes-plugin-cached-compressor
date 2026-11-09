@@ -173,3 +173,40 @@ def record_payload(**hook_kwargs: Any) -> None:
         SLOT.record(**hook_kwargs)
     except Exception:
         return
+
+
+def _non_negative_int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def observe_usage(**hook_kwargs: Any) -> None:
+    """Callback enregistré sur ``post_api_request`` : pré-diagnostic gratuit de la route.
+
+    L'usage de la réponse de la boucle principale est déjà là, normalisé (``cache_read_tokens``
+    couvre les variantes OpenAI, Anthropic et DeepSeek) : observer une lecture de cache nulle sur un
+    prompt assez grand coûte zéro, au lieu d'attendre une compaction pour découvrir que le backend
+    ne sert rien depuis le cache. Les appels d'appoint du plugin ne passent pas par ce hook, il n'y
+    a donc pas de boucle de rétroaction. Ne lève jamais.
+    """
+    try:
+        usage = hook_kwargs.get("usage")
+        if not isinstance(usage, dict):
+            return
+        prompt = _non_negative_int(usage.get("prompt_tokens"))
+        if prompt is None:
+            input_tokens = _non_negative_int(usage.get("input_tokens"))
+            cache_read = _non_negative_int(usage.get("cache_read_tokens"))
+            if input_tokens is not None and cache_read is not None:
+                prompt = input_tokens + cache_read
+        if not prompt:
+            return
+        cached = _non_negative_int(usage.get("cache_read_tokens")) or 0
+        route = cacheability.route_key(
+            hook_kwargs.get("provider"), hook_kwargs.get("model"), hook_kwargs.get("base_url"))
+        TRACKER.record(route, prompt, cached)
+    except Exception:
+        return

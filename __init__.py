@@ -138,9 +138,13 @@ class CachedCompressor(ContextCompressor):
         route = cacheability.route_key(wire.get("provider"), wire.get("model"), wire.get("base_url"))
         if state.TRACKER.prefix_allowed(route):
             return True
-        logger.info(
-            "cached-compressor: route without confirmed cache, falling back to the built-in "
-            "compressor (provider=%r model=%r)", wire.get("provider"), wire.get("model"))
+        if cacheability.is_forced_builtin():
+            logger.info(
+                "cached-compressor: built-in compressor forced by the force_builtin setting")
+        else:
+            logger.info(
+                "cached-compressor: route without confirmed cache, falling back to the built-in "
+                "compressor (provider=%r model=%r)", wire.get("provider"), wire.get("model"))
         return False
 
     def _build_summary_prompt(
@@ -272,15 +276,29 @@ def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any]) -> 
 
 
 def register(ctx: Any) -> None:
-    """Point d'entrée unique : moteur de contexte, ou plugin porteur du hook."""
+    """Point d'entrée unique : moteur de contexte, ou plugin porteur du hook.
+
+    Deux réglages optionnels, lus depuis ``plugins.entries.cached-compressor.settings`` :
+    ``min_cache_ratio`` (seuil de rentabilité, 0..1) et ``force_builtin`` (repli permanent sur le
+    compresseur intégré). Les valeurs illisibles sont ignorées : le comportement de base s'applique.
+    """
     issues = contract.problems()
     if issues:
         logger.error(
             "cached-compressor: incompatible Hermes build, keeping the built-in compressor: %s",
             "; ".join(issues))
         return
+    get_config = getattr(ctx, "get_config", None)
+    if callable(get_config):
+        cacheability.set_min_ratio(get_config("min_cache_ratio", None))
+        force = get_config("force_builtin", False)
+        if isinstance(force, bool) and force:
+            cacheability.force_builtin(True)
+            logger.info(
+                "cached-compressor: force_builtin set, the built-in compressor is always used")
     if hasattr(ctx, "register_context_engine"):
         ctx.register_context_engine(CachedCompressor())
     register_hook = getattr(ctx, "register_hook", None)
     if callable(register_hook):
         register_hook("pre_api_request", state.record_payload)
+        register_hook("post_api_request", state.observe_usage)

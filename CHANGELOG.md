@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Cacheability guard hardening: `post_api_request` now feeds the guard from the main loop's usage,
+  so a backend that never serves from cache is recognised before the first compaction, at zero cost
+  in calls (the plugin's own summary calls go through the auxiliary path, no feedback loop).
+- `min_cache_ratio` setting: a route whose observed hit rate over its last eight large measurements
+  is below the threshold is denied the prefix mode even without strikes. Unset by default.
+- `force_builtin` setting: permanent fallback to the built-in compressor, for backends known not to
+  cache. Unset by default; a clear log line marks the forced fallback.
+- README: new "Tuning" section; test count and CI policy brought up to date.
+
 ## 0.4.0
 
 - State: `on_session_end` releases the session's slot. It used to live until LRU eviction, holding a
