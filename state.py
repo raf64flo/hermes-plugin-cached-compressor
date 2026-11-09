@@ -8,7 +8,14 @@ compresseur ne relit ce slot qu'au tour suivant.
 Un slot par session, et non un slot unique : un processus peut servir plusieurs conversations
 (gateway, agents de flotte, sous-agents) avec le même couple modèle/provider. Avec un slot unique, la
 dernière requête émise écrasait le slot des autres, et la compaction d'une session pouvait se servir
-du fil d'une autre. Les sessions sont bornées en nombre, la plus ancienne écriture cédant la place.
+du fil d'une autre. Les sessions sont bornées en nombre et en octets, la plus ancienne écriture cédant
+la place, et la fin de session libère son slot (``CachedCompressor.on_session_end``).
+
+Confidentialité : ce module ne journalise rien. Ni le contenu des messages, ni les extraits d'outils ne
+sortent d'ici ; les journaux du plugin ne portent que des routes et des compteurs. Les messages sont
+copiés en surface à l'enregistrement, donc une mutation du dictionnaire d'origine après le hook ne
+change pas ce que le slot renvoie. Les valeurs imbriquées (``tool_calls``) restent partagées : on ne
+les copie pas, le coût d'un ``deepcopy`` sur un transcript de session étant disqualifiant.
 """
 
 from __future__ import annotations
@@ -23,6 +30,22 @@ from . import cacheability
 
 #: Nombre de sessions gardées en mémoire dans un même processus.
 MAX_SESSIONS = 8
+#: Budget mémoire des slots, en octets estimés (contenu des messages, plus un forfait par message).
+MAX_BYTES = 64 * 1024 * 1024
+#: Forfait par message pour l'enveloppe (rôle, identifiants, clés), qui n'est pas mesurée.
+_MESSAGE_OVERHEAD = 128
+
+
+def _entry_bytes(messages: list[dict[str, Any]], tools: list[Any]) -> int:
+    """Estimation volontairement grossière : le contenu, plus un forfait par message et par outil."""
+    total = 0
+    for message in messages:
+        content = message.get("content")
+        total += len(content) if isinstance(content, str) else 0
+        total += _MESSAGE_OVERHEAD
+        total += len(str(message.get("tool_calls") or ""))
+    total += sum(len(str(tool)) for tool in tools)
+    return total
 
 
 class PayloadSlot:
@@ -43,24 +66,43 @@ class PayloadSlot:
             return
         tools = payload.get("tools")
         key = str(hook_kwargs.get("session_id") or "")
+        stored = [dict(message) for message in messages if isinstance(message, dict)]
+        frozen_tools = [dict(tool) if isinstance(tool, dict) else tool for tool in tools] \
+            if isinstance(tools, list) else []
         with self._lock:
             self._slots[key] = {
-                "messages": list(messages),
-                "tools": list(tools) if isinstance(tools, list) else [],
+                "messages": stored,
+                "tools": frozen_tools,
                 "model": hook_kwargs.get("model"),
                 "provider": hook_kwargs.get("provider"),
                 "base_url": hook_kwargs.get("base_url"),
                 "api_mode": hook_kwargs.get("api_mode"),
                 "session_id": hook_kwargs.get("session_id"),
                 "history_len": len(hook_kwargs.get("conversation_history") or []),
-                "message_count": len(messages),
+                "message_count": len(stored),
+                "bytes": _entry_bytes(stored, frozen_tools),
                 "recorded_at": time.time(),
             }
             if key in self._recency:
                 self._recency.remove(key)
             self._recency.append(key)
-            while len(self._recency) > MAX_SESSIONS:
-                self._slots.pop(self._recency.pop(0), None)
+            self._evict(key)
+
+    def _evict(self, keep: str) -> None:
+        """Ramène le nombre de sessions et le budget mémoire sous leurs plafonds.
+
+        La session qui vient d'être écrite est conservée : un seul transcript plus lourd que tout le
+        budget reste utile au tour qui suit, et l'écraser ne libérerait rien.
+        """
+        while len(self._recency) > 1:
+            total = sum(entry["bytes"] for entry in self._slots.values())
+            if len(self._recency) <= MAX_SESSIONS and total <= MAX_BYTES:
+                break
+            oldest = next((name for name in self._recency if name != keep), None)
+            if oldest is None:
+                break
+            self._recency.remove(oldest)
+            self._slots.pop(oldest, None)
 
     def snapshot(self, session_id: str | None = None) -> dict[str, Any] | None:
         """Payload d'une session, ou de la plus récente si ``session_id`` est omis."""
@@ -71,7 +113,12 @@ class PayloadSlot:
             else:
                 key = str(session_id)
             data = self._slots.get(key) if key is not None else None
-            return dict(data) if data else None
+            if not data:
+                return None
+            copy = dict(data)
+            copy["messages"] = list(data["messages"])
+            copy["tools"] = list(data["tools"])
+            return copy
 
     def clear(self, session_id: str | None = None) -> None:
         with self._lock:

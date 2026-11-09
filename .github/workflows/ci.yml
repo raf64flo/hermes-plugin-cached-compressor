@@ -7,9 +7,20 @@ on:
 
 jobs:
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The version the plugin declares in plugin.yaml, and the moving target it will meet.
+          - hermes_ref: v0.23.0
+            experimental: false
+          - hermes_ref: main
+            experimental: true
     runs-on: ubuntu-latest
+    # A break on main is information, not a gate: the release line stays the declared minimum.
+    continue-on-error: ${{ matrix.experimental }}
     env:
-      HERMES_REF: v0.23.0
+      HERMES_REF: ${{ matrix.hermes_ref }}
     steps:
       - uses: actions/checkout@v4
 
