@@ -228,7 +228,7 @@ def run_arm(kind: str, messages: list[dict]) -> dict:
         "latency_s": round(elapsed, 1),
         "messages_before": len(messages),
         "messages_after": len(compacted),
-        "summary": _summary_of(compacted)[:6000],
+        "summary": _summary_of(compacted),
         "call_details": transport.calls,
     }
 
@@ -250,8 +250,27 @@ def warm(transport: Transport, wire: dict) -> dict:
             if last["prompt_tokens"] else 0.0}
 
 
-def judge(builtin: dict, plugin: dict, flip: bool) -> dict:
-    """Score both summaries blind; ``flip`` swaps which arm is labelled A."""
+def judge(builtin: dict, plugin: dict) -> dict:
+    """Score both summaries blind, once in each label order, and average the two votes."""
+    votes = [_judge_once(builtin, plugin, flip) for flip in (False, True)]
+    totals = {}
+    for arm in ("builtin", "plugin"):
+        per_vote = []
+        for vote in votes:
+            label = next((name for name in ("A", "B") if vote["labels"][name] == arm), None)
+            if label and isinstance(vote.get(label), dict):
+                per_vote.append(vote[label])
+        totals[arm] = ({key: round(sum(score[key] for score in per_vote) / len(per_vote), 1)
+                        for key in per_vote[0]} if per_vote else None)
+        if totals[arm]:
+            totals[arm]["total"] = round(sum(totals[arm].values()), 1)
+    order_votes = [vote.get("better_arm") for vote in votes]
+    winner = "tie" if len(set(order_votes)) > 1 else order_votes[0]
+    return {"votes": votes, "totals": totals, "better_arm": winner,
+            "label_order_agrees": len(set(order_votes)) == 1}
+
+
+def _judge_once(builtin: dict, plugin: dict, flip: bool) -> dict:
     first, second = (plugin, builtin) if flip else (builtin, plugin)
     labels = {"A": "plugin" if flip else "builtin", "B": "builtin" if flip else "plugin"}
     content = f"{RUBRIC}\n\nSummary A:\n{first['summary']}\n\nSummary B:\n{second['summary']}"
@@ -260,8 +279,11 @@ def judge(builtin: dict, plugin: dict, flip: bool) -> dict:
     text = response.choices[0].message.content or ""
     start, end = text.find("{"), text.rfind("}")
     scores = json.loads(text[start:end + 1]) if start >= 0 and end > start else {}
-    if scores.get("better") in labels:
-        scores["better_arm"] = labels[scores["better"]]
+    better = scores.pop("better", None)
+    if better in labels:
+        scores["better_arm"] = labels[better]
+    else:
+        scores["better_arm"] = None
     scores["labels"] = labels
     scores["cost_usd"] = transport.calls[-1]["cost_usd"]
     return scores
@@ -301,7 +323,10 @@ def main() -> int:
             run = {"target_tokens": target, "warm": warming,
                    "arms": {"builtin": builtin, "plugin": plugin}}
             if not args.no_judge:
-                run["judge"] = judge(builtin, plugin, flip=(len(report["runs"]) % 2 == 1))
+                try:
+                    run["judge"] = judge(builtin, plugin)
+                except Exception as error:  # the judge must never discard the measurement
+                    run["judge_error"] = repr(error)
             report["runs"].append(run)
             print(f"{'arm':8s} {'calls':>5s} {'prompt':>8s} {'cached':>8s} {'hit':>7s} "
                   f"{'out':>5s} {'cost_usd':>9s} {'latency':>8s} {'msgs':>9s}")
@@ -313,9 +338,15 @@ def main() -> int:
                       f"{arm['latency_s']:7.1f}s {arm['messages_before']:4d}->"
                       f"{arm['messages_after']}")
             if run.get("judge"):
-                scores = run["judge"]
-                print("judge:", {key: scores.get(key)
-                                 for key in ("A", "B", "better_arm", "labels")})
+                verdict = run["judge"]
+                totals = verdict.get("totals") or {}
+                builtin_total = (totals.get("builtin") or {}).get("total")
+                plugin_total = (totals.get("plugin") or {}).get("total")
+                print(f"judge: builtin={builtin_total}/25 plugin={plugin_total}/25 "
+                      f"-> {verdict.get('better_arm')} "
+                      f"(label order stable: {verdict.get('label_order_agrees')})")
+            elif run.get("judge_error"):
+                print("judge failed:", run["judge_error"])
 
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, time.strftime("bench-%Y%m%d-%H%M%S.json"))
