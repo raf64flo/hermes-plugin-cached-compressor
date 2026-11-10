@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-10)
 
 - `bench/fact_recall.py`: nine planted facts in three families (protected tail, summarized middle,
   pruned tool output) and a reader that answers from the compacted transcript alone, so the survival
