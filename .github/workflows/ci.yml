@@ -11,8 +11,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The version the plugin declares in plugin.yaml, and the moving target it will meet.
+          # The version the plugin declares in plugin.yaml, the current release line, and the
+          # moving target it will meet.
           - hermes_ref: v0.23.0
+            experimental: false
+          - hermes_ref: v0.23.1
             experimental: false
           - hermes_ref: main
             experimental: true

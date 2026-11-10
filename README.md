@@ -247,5 +247,8 @@ Live probes, which do need a provider key, are in `probes/`:
 - Cache accounting is only as good as the provider's usage payload. On providers that do not report
   cache reads, the plugin steps aside (see above).
 
-Tested range: 0.23.0 (declared minimum, CI) up to the current `main` (CI, allowed to fail). There is
-no manifest field for a tested maximum, so the CI matrix is the record.
+Tested range: 0.23.0 (declared minimum) and 0.23.1 (both in CI), up to the current `main` (CI,
+allowed to fail). There is no manifest field for a tested maximum, so the CI matrix is the record.
+0.23.1 restructured `ContextCompressor` into mixins (`SummaryDispatchMixin`, `MicroCompactionMixin`
+and others) without moving `compress(messages)`, and kept the `pre_api_request` / `post_api_request`
+payload keys the plugin reads, `usage.cache_read_tokens` included.
