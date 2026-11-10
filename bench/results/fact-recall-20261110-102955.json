@@ -1,0 +1,187 @@
+{
+ "date": "2026-11-10T09:27:12Z",
+ "model": "deepseek-v4.1-flash",
+ "target_tokens": 20000,
+ "facts": [
+  {
+   "id": "T-1",
+   "family": "tail"
+  },
+  {
+   "id": "T-2",
+   "family": "tail"
+  },
+  {
+   "id": "T-3",
+   "family": "tail"
+  },
+  {
+   "id": "M-1",
+   "family": "middle"
+  },
+  {
+   "id": "M-2",
+   "family": "middle"
+  },
+  {
+   "id": "M-3",
+   "family": "middle"
+  },
+  {
+   "id": "P-1",
+   "family": "pruned"
+  },
+  {
+   "id": "P-2",
+   "family": "pruned"
+  },
+  {
+   "id": "P-3",
+   "family": "pruned"
+  }
+ ],
+ "arms": {
+  "builtin": {
+   "calls": 1,
+   "prompt_tokens": 8295,
+   "cached_tokens": 0,
+   "cache_hit": 0.0,
+   "cost_usd": 0.017226,
+   "latency_s": 128.9,
+   "messages_before": 202,
+   "messages_after": 10,
+   "families": {
+    "tail": {
+     "hits": 3,
+     "total": 3
+    },
+    "middle": {
+     "hits": 3,
+     "total": 3
+    },
+    "pruned": {
+     "hits": 0,
+     "total": 3
+    }
+   },
+   "details": [
+    {
+     "id": "T-1",
+     "family": "tail",
+     "hit": true
+    },
+    {
+     "id": "T-2",
+     "family": "tail",
+     "hit": true
+    },
+    {
+     "id": "T-3",
+     "family": "tail",
+     "hit": true
+    },
+    {
+     "id": "M-1",
+     "family": "middle",
+     "hit": true
+    },
+    {
+     "id": "M-2",
+     "family": "middle",
+     "hit": true
+    },
+    {
+     "id": "M-3",
+     "family": "middle",
+     "hit": true
+    },
+    {
+     "id": "P-1",
+     "family": "pruned",
+     "hit": false
+    },
+    {
+     "id": "P-2",
+     "family": "pruned",
+     "hit": false
+    },
+    {
+     "id": "P-3",
+     "family": "pruned",
+     "hit": false
+    }
+   ]
+  },
+  "plugin": {
+   "calls": 1,
+   "prompt_tokens": 23470,
+   "cached_tokens": 21760,
+   "cache_hit": 0.9271,
+   "cost_usd": 0.003129,
+   "latency_s": 27.1,
+   "messages_before": 202,
+   "messages_after": 10,
+   "families": {
+    "tail": {
+     "hits": 3,
+     "total": 3
+    },
+    "middle": {
+     "hits": 3,
+     "total": 3
+    },
+    "pruned": {
+     "hits": 0,
+     "total": 3
+    }
+   },
+   "details": [
+    {
+     "id": "T-1",
+     "family": "tail",
+     "hit": true
+    },
+    {
+     "id": "T-2",
+     "family": "tail",
+     "hit": true
+    },
+    {
+     "id": "T-3",
+     "family": "tail",
+     "hit": true
+    },
+    {
+     "id": "M-1",
+     "family": "middle",
+     "hit": true
+    },
+    {
+     "id": "M-2",
+     "family": "middle",
+     "hit": true
+    },
+    {
+     "id": "M-3",
+     "family": "middle",
+     "hit": true
+    },
+    {
+     "id": "P-1",
+     "family": "pruned",
+     "hit": false
+    },
+    {
+     "id": "P-2",
+     "family": "pruned",
+     "hit": false
+    },
+    {
+     "id": "P-3",
+     "family": "pruned",
+     "hit": false
+    }
+   ]
+  }
+ }
+}

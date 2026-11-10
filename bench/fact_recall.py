@@ -31,23 +31,28 @@ import re
 import sys
 import time
 import urllib.request
+from typing import Any
 
 REPO = os.environ.get("PLUGIN_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # bench.py reads the key at import time; the self-test must run without one (and without network).
-if "--self-test" in sys.argv:
+SELF_TEST = "--self-test" in sys.argv
+if SELF_TEST:
     os.environ.setdefault("BENCH_API_KEY", "offline-self-test")
 
-_spec = importlib.util.spec_from_file_location(
-    "bench_harness", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench.py"))
-assert _spec and _spec.loader
-harness = importlib.util.module_from_spec(_spec)
-sys.modules["bench_harness"] = harness
-_spec.loader.exec_module(harness)
-
-cc = harness.cc
-Transport = harness.Transport
+#: Kept local so ``--self-test`` runs without importing the Hermes package at all (CI has no
+#: ``run_agent`` dependencies). The live path imports the real harness below.
+CHARS_PER_TOKEN = 3.6
+MODULES = ("alignment", "summary", "state", "cacheability", "plugin", "transport")
+harness: Any = None
+if not SELF_TEST:
+    _spec = importlib.util.spec_from_file_location(
+        "bench_harness", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench.py"))
+    assert _spec and _spec.loader
+    harness = importlib.util.module_from_spec(_spec)
+    sys.modules["bench_harness"] = harness
+    _spec.loader.exec_module(harness)
 
 #: (family, id, token the answer must contain, question put to the reader)
 FACTS = (
@@ -68,7 +73,7 @@ FILLER = ("    record = _enrich(payload, key='field')\n"
 
 def build_transcript(target_tokens: int, salt: str = "") -> list[dict]:
     """Deterministic transcript with the three fact families planted."""
-    budget = int(target_tokens * harness.CHARS_PER_TOKEN)
+    budget = int(target_tokens * CHARS_PER_TOKEN)
     messages: list[dict] = []
 
     def add(role: str, content: str, **extra: object) -> None:
@@ -77,7 +82,7 @@ def build_transcript(target_tokens: int, salt: str = "") -> list[dict]:
         messages.append(message)
 
     def turn(index: int) -> None:
-        module = harness.MODULES[index % len(harness.MODULES)]
+        module = MODULES[index % len(MODULES)]
         add("user", f"Task {index}: audit src/{module}.py for unbounded retries.{salt}")
         add("assistant", "", tool_calls=[{
             "id": f"call_{index}", "type": "function",
@@ -176,11 +181,11 @@ def _compacted_of(kind: str, messages: list[dict], model: str) -> tuple[list[dic
     """Run one engine's real compress() and keep the transcript it returns."""
     import agent.context_compressor as context_module
 
-    transport = Transport(model=model)
+    transport = harness.Transport(model=model)
     original_context = context_module.call_llm
-    original_plugin = cc.call_llm
+    original_plugin = harness.cc.call_llm
     context_module.call_llm = transport
-    cc.call_llm = transport
+    harness.cc.call_llm = transport
     engine = harness._make_engine(kind, model)
     try:
         started = time.monotonic()
@@ -188,7 +193,7 @@ def _compacted_of(kind: str, messages: list[dict], model: str) -> tuple[list[dic
         elapsed = time.monotonic() - started
     finally:
         context_module.call_llm = original_context
-        cc.call_llm = original_plugin
+        harness.cc.call_llm = original_plugin
     prompt = sum(call["prompt_tokens"] for call in transport.calls)
     cached = sum(call["cached_tokens"] for call in transport.calls)
     costs = [call["cost_usd"] for call in transport.calls]
@@ -217,7 +222,7 @@ def self_test() -> int:
     assert result["families"]["middle"] == {"hits": 1, "total": 3}, result["families"]["middle"]
     assert result["families"]["pruned"] == {"hits": 2, "total": 3}, result["families"]["pruned"]
     print(f"self-test ok: {len(messages)} messages, "
-          f"{len(joined) // harness.CHARS_PER_TOKEN} tokens, scoring as expected")
+          f"{len(joined) // CHARS_PER_TOKEN} tokens, scoring as expected")
     return 0
 
 
@@ -238,9 +243,9 @@ def main() -> int:
     agent.tools = harness.TOOLS
     wire = harness._build_api_kwargs_for_mode(
         agent, harness._iteration_summary_api_messages(agent, messages))
-    warming = harness.warm(Transport(), wire)
+    warming = harness.warm(harness.Transport(), wire)
     print(f"prefix warm: {warming['hit']:.1%} after {len(warming['attempts'])} attempt(s)")
-    cc.state.record_payload(
+    harness.cc.state.record_payload(
         request=wire, request_messages=wire["messages"], model=harness.MODEL,
         provider=harness.PROVIDER, base_url=harness.BASE, api_mode="chat_completions",
         conversation_history=messages, session_id="fact-recall")

@@ -21,6 +21,7 @@ import json
 import os
 import sys
 import time
+from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.environ.get("PLUGIN_ROOT", os.path.dirname(HERE))
@@ -28,12 +29,19 @@ sys.path.insert(0, HERE)
 
 if "--self-test" in sys.argv:
     os.environ.setdefault("BENCH_API_KEY", "offline-self-test")
+    SELF_TEST = True
+else:
+    SELF_TEST = False
 
-_spec = importlib.util.spec_from_file_location("bench_harness", os.path.join(HERE, "bench.py"))
-assert _spec and _spec.loader
-harness = importlib.util.module_from_spec(_spec)
-sys.modules["bench_harness"] = harness
-_spec.loader.exec_module(harness)
+#: The self-test runs without the Hermes package: CI has no ``run_agent`` dependencies, and the
+#: leak guard must be testable on its own.
+harness: Any = None
+if not SELF_TEST:
+    _spec = importlib.util.spec_from_file_location("bench_harness", os.path.join(HERE, "bench.py"))
+    assert _spec and _spec.loader
+    harness = importlib.util.module_from_spec(_spec)
+    sys.modules["bench_harness"] = harness
+    _spec.loader.exec_module(harness)
 
 _aspec = importlib.util.spec_from_file_location("bench_anonymize", os.path.join(HERE, "anonymize.py"))
 assert _aspec and _aspec.loader
