@@ -1,9 +1,9 @@
-"""Preuve de bout en bout : la compaction passe par le plugin et le préfixe est servi par le cache.
+"""End to end: the compaction goes through the plugin and the prefix is served from cache.
 
-Writer  = la requête réelle de la session (chemin d'assemblage de Hermes), qui chauffe le cache.
-Reader  = `CachedCompressor._call_summary_llm`, la méthode réellement utilisée en production
-          (reader_messages -> call_llm), sur la même route.
-On lit le `cached_tokens` que le provider rapporte, pas une estimation.
+Writer  = the session's real request (Hermes' assembly path), which warms the cache.
+Reader  = `CachedCompressor._call_summary_llm`, the method actually used in production
+          (reader_messages -> call_llm), on the same route.
+We read the `cached_tokens` the provider reports, not an estimate.
 """
 
 import json
@@ -59,13 +59,13 @@ def history(n=40):
     msgs = []
     body = ("    out.append(_enrich(r))\n    return out\n") * 30
     for i in range(n):
-        msgs.append({"role": "user", "content": f"  Tâche {i}: vérifie src/module_{i}.py  "})
+        msgs.append({"role": "user", "content": f"  Task {i}: check src/module_{i}.py  "})
         msgs.append({"role": "assistant", "content": "", "tool_calls": [{
             "id": f"call_{i}", "type": "function",
             "function": {"name": "read_file", "arguments": '{ "path" : "src/module_%d.py" }' % i}}]})
         msgs.append({"role": "tool", "tool_call_id": f"call_{i}", "name": "read_file",
                      "content": f"# src/module_{i}.py\n" + body})
-        msgs.append({"role": "assistant", "content": f"Module {i} inchangé, prochaine étape: patch."})
+        msgs.append({"role": "assistant", "content": f"Module {i} unchanged, next step: patch."})
     msgs.append({"role": "user", "content": "Continue."})
     return msgs
 
@@ -93,9 +93,9 @@ agent._cached_system_prompt = SYSTEM
 agent.tools = TOOLS
 
 msgs = history()
-cut = len(msgs) - 12                      # queue protégée, comme le compresseur
+cut = len(msgs) - 12                      # protected tail, like the compressor
 
-# --- 1. writer : la requête réelle de la session, qui chauffe le cache
+# --- 1. writer: the session's real request, which warms the cache
 wire_full = _iteration_summary_api_messages(agent, msgs)
 writer_body = _build_api_kwargs_for_mode(agent, wire_full)
 for attempt in (1, 2):
@@ -106,7 +106,7 @@ for attempt in (1, 2):
 
 time.sleep(3)
 
-# --- 2. le hook capture ce payload tel quel (mêmes dicts, copie de surface)
+# --- 2. the hook captures that payload as is (same dicts, shallow copy)
 cc.state.record_payload(
     request=writer_body, request_messages=writer_body["messages"],
     model=MODEL, provider="nous", base_url=BASE, api_mode="chat_completions",
@@ -114,7 +114,7 @@ cc.state.record_payload(
 slot = cc.state.SLOT.snapshot()
 print(f"slot    messages={len(slot['messages'])} history_len={slot['history_len']} offset={slot['message_count'] - slot['history_len']}")
 
-# --- 3. reader : la méthode du plugin, sur la même route
+# --- 3. reader: the plugin's method, on the same route
 engine = cc.CachedCompressor(model=MODEL, provider="nous", api_key=KEY, base_url=BASE,
                              api_mode="chat_completions", config_context_length=200_000,
                              quiet_mode=True)
@@ -122,21 +122,21 @@ engine._pristine = list(msgs)
 engine._window = list(msgs[:cut])
 engine._active_compression_telemetry = {}
 
-prompt = engine._build_summary_prompt("peu importe", 900, None, "", True)
-print(f"prompt  pointeur={'oui' if 'earlier messages of this same request' in prompt else 'non'} chars={len(prompt)}")
+prompt = engine._build_summary_prompt("irrelevant", 900, None, "", True)
+print(f"prompt  pointer={'yes' if 'earlier messages of this same request' in prompt else 'no'} chars={len(prompt)}")
 
 started = time.monotonic()
 real_call_llm = cc.call_llm
 
 
 def spy(**kwargs):
-    print(f"envoyé  messages={len(kwargs['messages'])} "
-          f"rôles_fin={[m.get('role') for m in kwargs['messages'][-3:]]} "
+    print(f"sent    messages={len(kwargs['messages'])} "
+          f"tail_roles={[m.get('role') for m in kwargs['messages'][-3:]]} "
           f"runtime_model={kwargs.get('main_runtime', {}).get('model')} "
           f"runtime_session={kwargs.get('main_runtime', {}).get('session_id')}")
     response = real_call_llm(**kwargs)
     usage_obj = getattr(response, "usage", None)
-    print(f"reçu    model={getattr(response, 'model', None)} usage={usage_obj}")
+    print(f"got     model={getattr(response, 'model', None)} usage={usage_obj}")
     return response
 
 
@@ -149,7 +149,7 @@ telemetry = engine._active_compression_telemetry
 print()
 print(f"reader  prompt={telemetry.get('aux_prompt_tokens')} "
       f"cached={telemetry.get('cache_read_tokens')} "
-      f"hit={telemetry.get('cache_read_ratio')} durée={elapsed:.1f}s")
+      f"hit={telemetry.get('cache_read_ratio')} elapsed={elapsed:.1f}s")
 print()
-print("--- résumé produit ---")
+print("--- produced summary ---")
 print(summary[:1200])

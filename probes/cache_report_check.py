@@ -1,15 +1,15 @@
-"""Ce backend rapporte-t-il ses lectures de cache, et sous quel champ ?
+"""Does this backend report its cache reads, and under which field?
 
     BENCH_API_KEY=... python probes/cache_report_check.py
     BENCH_API_KEY=... python probes/cache_report_check.py --base URL --model ID --tokens 4000
 
-Envoie deux fois le même prompt long, dans la même session, et lit l'usage de chaque réponse. Le
-premier envoi remplit le cache, le second le relit. Trois choses en sortent : le champ que ce backend
-utilise, le hit réellement servi, et le temps de prefill de chaque appel.
+Sends the same long prompt twice in one session and reads the usage of each response. The first
+send fills the cache, the second reads it back. Three things come out: the field this backend uses,
+the hit actually served, and the prefill time of each call.
 
-Un backend muet n'est pas un backend sans cache : il peut en avoir un et ne pas le facturer. Dans ce
-cas le plugin repasse au compresseur intégré (deux mesures muettes), et le gain éventuel est un gain
-de temps, pas d'argent.
+A mute backend is not a cache-less backend: it may have a cache and not bill it. In that case the
+plugin falls back to the built-in compressor (two mute measurements), and the gain, if any, is a
+gain in time, not in money.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
-#: Champs connus, dans l'ordre où le plugin les essaie.
+#: Known fields, in the order the plugin tries them.
 FIELDS = ("cached_tokens", "prompt_cache_hit_tokens", "cache_read_input_tokens",
           "cached_content_token_count", "cachedContentTokenCount")
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -51,7 +51,7 @@ def _post(base: str, key: str, model: str, messages: list[dict], session: str,
                     delay = min(float(retry_after), 120.0) if retry_after else 15.0
                 except ValueError:
                     delay = 15.0
-                print(f"  429 (appel {attempt + 1}); retry-after={retry_after!r}, attente {delay:0.0f}s")
+                print(f"  429 (call {attempt + 1}); retry-after={retry_after!r}, waiting {delay:0.0f}s")
                 last_error = err
                 time.sleep(delay)
                 continue
@@ -60,7 +60,7 @@ def _post(base: str, key: str, model: str, messages: list[dict], session: str,
         else:
             payload["_elapsed_s"] = round(time.monotonic() - started, 2)
             return payload
-    raise SystemExit(f"HTTP 429 après {retries} retries") from last_error
+    raise SystemExit(f"HTTP 429 after {retries} retries") from last_error
 
 
 def _as_int(value: object) -> int | None:
@@ -71,7 +71,7 @@ def _as_int(value: object) -> int | None:
 
 
 def _usage_fields(usage: dict) -> dict[str, object]:
-    """Tous les champs de cache présents, à la racine comme dans ``prompt_tokens_details``."""
+    """Every cache field present, at the root as well as in ``prompt_tokens_details``."""
     details = usage.get("prompt_tokens_details") or {}
     found: dict[str, object] = {}
     for field in FIELDS:
@@ -87,19 +87,20 @@ def main() -> int:
     parser.add_argument("--base", default=os.environ.get(
         "BENCH_BASE", "https://opencode.ai/inference/go/openai/v1"))
     parser.add_argument("--model", default=os.environ.get("BENCH_MODEL", "deepseek-v4.1-flash"))
-    parser.add_argument("--tokens", type=int, default=4_000, help="taille approximative du prompt")
+    parser.add_argument("--tokens", type=int, default=4_000, help="approximate prompt size")
     parser.add_argument("--repeat", type=int, default=2)
     parser.add_argument("--sleep", type=float, default=3.0,
-                        help="délai entre deux envois : l'écriture de cache arrive après la réponse")
+                        help="delay between sends: the cache write lands after the response")
     args = parser.parse_args()
 
     key = os.environ.get("BENCH_API_KEY") or os.environ.get("HERMES_API_KEY")
     if not key:
-        print("BENCH_API_KEY absent", file=sys.stderr)
+        print("BENCH_API_KEY is not set", file=sys.stderr)
         return 2
 
-    paragraph = ("Audit du module src/state.py : le slot conserve le dernier payload fil observé. "
-                 "Décision : borner en octets et libérer à la fin de session. ")
+    paragraph = ("A state module keeps the last observed wire payload in a per-session slot. "
+                 "The audit asks whether that slot should be bounded in bytes and released at "
+                 "session end. ")
     messages = [{"role": "user",
                  "content": paragraph * max(1, int(args.tokens * 3.6 / len(paragraph)))}]
     session = f"cache-check-{os.getpid()}"
@@ -117,24 +118,24 @@ def main() -> int:
         hits.append(hit)
         elapsed.append(payload["_elapsed_s"])
         seen.update(found)
-        print(f"appel {attempt}: prompt={prompt} champs={found or 'aucun'} "
+        print(f"call {attempt}: prompt={prompt} fields={found or 'none'} "
               f"hit={hit:.1%} prefill={payload['_elapsed_s']:.2f}s")
         if attempt < args.repeat and args.sleep > 0:
             time.sleep(args.sleep)
 
     print()
     if not seen:
-        print("VERDICT : ce backend ne rapporte aucun champ de cache.")
-        print("          Le plugin le traitera comme une route sans cache et repassera au natif.")
+        print("VERDICT: this backend reports no cache field.")
+        print("         The plugin treats it as a route without cache and falls back to the built-in.")
         return 1
-    print(f"VERDICT : champ(s) rapporté(s) -> {', '.join(sorted(seen))}")
-    print(f"          hit du dernier appel {hits[-1]:.1%}, prefill {elapsed[0]:.2f}s -> "
+    print(f"VERDICT: field(s) reported -> {', '.join(sorted(seen))}")
+    print(f"         last call hit {hits[-1]:.1%}, prefill {elapsed[0]:.2f}s -> "
           f"{elapsed[-1]:.2f}s")
     if hits[-1] >= 0.5:
-        print("          Cache servi : le mode préfixe a un sens sur cette route.")
+        print("         Cache served: the prefix mode makes sense on this route.")
     else:
-        print("          Aucun hit au second envoi : soit l'écriture est asynchrone (réessayer),")
-        print("          soit le cache est désactivé sur ce backend.")
+        print("         No hit on the second send: either the write is asynchronous (retry),")
+        print("         or the cache is disabled on this backend.")
     return 0
 
 
