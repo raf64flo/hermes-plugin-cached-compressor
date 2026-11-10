@@ -61,6 +61,7 @@ class Anonymizer:
 
     def __init__(self, names: list[str] | None = None) -> None:
         self.hosts: dict[str, str] = {}
+        self.call_ids: dict[str, str] = {}
         self.names = {name for name in (names or []) if name}
         self.names.add(os.environ.get("USER", ""))
 
@@ -109,8 +110,51 @@ class Anonymizer:
             message: dict = {"role": row.get("role") or "user", "content": content}
             if row.get("tool_name"):
                 message["name"] = self.text(row["tool_name"])
+            raw_calls = row.get("tool_calls")
+            if raw_calls:
+                calls = self._tool_calls(raw_calls)
+                if calls:
+                    message["tool_calls"] = calls
+            call_id = row.get("tool_call_id")
+            if call_id:
+                # Tool results must point at their call; the id itself carries nothing worth keeping.
+                message["tool_call_id"] = self._call_id(call_id)
             cleaned.append(message)
         return cleaned
+
+    def _call_id(self, value: str) -> str:
+        if value not in self.call_ids:
+            self.call_ids[value] = f"call_{len(self.call_ids) + 1}"
+        return self.call_ids[value]
+
+    def _tool_calls(self, raw: object) -> list[dict]:
+        """Rebuild the call list with masked arguments (paths and secrets live there too)."""
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return []
+        else:
+            parsed = raw
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        if not isinstance(parsed, list):
+            return []
+        calls: list[dict] = []
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            function = entry.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                arguments = self.text(arguments)
+            calls.append({
+                "id": self._call_id(str(entry.get("id") or entry.get("call_id") or "")),
+                "type": entry.get("type") or "function",
+                "function": {"name": function.get("name") or "tool",
+                             "arguments": arguments if isinstance(arguments, str) else "{}"},
+            })
+        return calls
 
 
 def _hashed(value: str) -> str:
@@ -121,9 +165,10 @@ def load_sessions(limit: int = 4, max_tokens: int = 12_000,
                   anonymizer: Anonymizer | None = None) -> list[dict]:
     """Read the local store read-only and return masked, token-capped transcripts.
 
-    Selection is stratified so the corpus is heterogeneous: half the sessions are short (fewer than
-    40 messages), half are long, and tool-heavy sessions are preferred. Every returned transcript is
-    capped at ``max_tokens`` by dropping the middle messages, keeping head and tail.
+    Selection is stratified so the corpus is heterogeneous: half the sessions are medium (80 to 200
+    messages), half are large (over 200), tool-heavy sessions preferred. Every returned transcript is
+    capped at ``max_tokens`` by keeping a head slice and a tail slice, which is the shape compaction
+    sees.
     """
     if not STATE_DB.exists():
         raise SystemExit(f"session store not found: {STATE_DB}")
@@ -131,24 +176,32 @@ def load_sessions(limit: int = 4, max_tokens: int = 12_000,
     connection = sqlite3.connect(f"file:{STATE_DB}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     try:
-        short = connection.execute(
-            "select id, message_count from sessions where message_count between 8 and 40 "
-            "and ended_at is not null order by tool_call_count desc, id limit ?",
-            (max(1, limit // 2),)).fetchall()
-        long = connection.execute(
-            "select id, message_count from sessions where message_count > 60 "
+        # Long sessions only: the compressors protect the last 20 messages, so a session shorter
+        # than that has nothing to summarize and the comparison would measure the tail guard.
+        medium = connection.execute(
+            "select id, message_count from sessions where message_count between 80 and 200 "
             "and ended_at is not null order by tool_call_count desc, message_count desc limit ?",
-            (limit - len(short),)).fetchall()
-        chosen = list(short) + list(long)
+            (max(4, limit * 4),)).fetchall()
+        large = connection.execute(
+            "select id, message_count from sessions where message_count > 200 "
+            "and ended_at is not null order by tool_call_count desc, message_count desc limit ?",
+            (max(4, limit * 4),)).fetchall()
+        chosen = list(medium) + list(large)
         sessions: list[dict] = []
         for row in chosen:
+            if len(sessions) >= limit:
+                break
             messages = connection.execute(
-                "select role, content, tool_name from messages "
+                "select role, content, tool_name, tool_calls, tool_call_id from messages "
                 "where session_id = ? and content is not null and active = 1 "
                 "order by id", (row["id"],)).fetchall()
             kept = _cap_tokens([dict(m) for m in messages], max_tokens)
-            masked = anonymizer.messages(kept)
-            if not masked:
+            masked = _consistent(anonymizer.messages(kept))
+            while masked and masked[0]["role"] == "tool":
+                masked.pop(0)      # a head slice can start mid-call; an orphan result is not a turn
+            # A capped slice can collapse into a handful of turns; that measures the cap, not the
+            # engine. Require a transcript that still looks like a session.
+            if len(masked) < 8 or not any(m.get("tool_calls") for m in masked):
                 continue
             sessions.append({
                 "session": _hashed(row["id"]),
@@ -198,6 +251,27 @@ def _cap_tokens(rows: list[dict], max_tokens: int) -> list[dict]:
 _FAKE_KEY = "canary0123456789abcdef"
 _FAKE_PAT = "CANARY0123456789abc"
 _FAKE_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.c2lnbmF0dXJlLWNhbmFyeQ"
+
+def _consistent(messages: list[dict]) -> list[dict]:
+    """Drop tool results whose call is not in the kept slices.
+
+    The head/tail cap cuts mid-turn, and a tool result without its assistant call is not a shape a
+    real transcript can hold: it would make the engines' alignment fail for the wrong reason.
+    """
+    known: set[str] = set()
+    kept: list[dict] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "tool":
+            if message.get("tool_call_id") in known:
+                kept.append(message)
+            continue
+        if role == "assistant":
+            for call in message.get("tool_calls") or []:
+                known.add(str(call.get("id")))
+        kept.append(message)
+    return kept
+
 
 CANARY = {
     "messages": [
