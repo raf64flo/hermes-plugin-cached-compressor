@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `bench/fact_recall.py`: nine planted facts in three families (protected tail, summarized middle,
+  pruned tool output) and a reader that answers from the compacted transcript alone, so the survival
+  of specific facts is measured instead of inferred from a rubric. Measured on a 20k transcript:
+  3/3, 3/3, 0/3 for both engines, at 0.0031 USD and 27.1 s for the plugin against 0.0172 USD and
+  128.9 s for the built-in.
+- `bench/anonymize.py` and `bench/hetero_bench.py`: the same comparison over a stratified sample of a
+  real local session store. Masking covers credentials, emails, addresses, URLs, home paths and
+  explicit names; a canary corpus fails the run if a sentinel survives, and a leak guard scans the
+  serialized report for transcript windows before writing it. Published output: counters only.
+- `tests/test_bench_probes.py`: the canary, its negative case, and the probes' self-tests now run in
+  CI (83 tests).
 - Hermes 0.23.1: verified, no code change needed. The release refactored `ContextCompressor` into
   mixins and trimmed `hermes_cli/plugins.py`, but `compress(messages)`, the `hermes_cli.lifecycle`
   hook dispatch, the `pre_api_request` / `post_api_request` payload keys and

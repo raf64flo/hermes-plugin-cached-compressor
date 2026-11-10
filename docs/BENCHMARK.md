@@ -182,3 +182,47 @@ serving the prefix from cache.
   summarizes better, so the dollars in section 1 describe the cache, not a deployment.
 - Transcripts are synthetic and regular. A more heterogeneous history changes the built-in's sampling
   coverage and both summary lengths.
+
+## 4. Fact recall
+
+The rubric judge scores a summary as a whole; it cannot say which facts survived. This experiment
+plants nine machine-checkable facts in three places and asks a reader (the session model, shown only
+the compacted transcript) one question per fact, scored on exact token containment:
+
+- *tail*: facts in the protected tail, which no engine is allowed to summarize away;
+- *middle*: facts in ordinary conversation inside the summarized window, the family that measures the
+  summarizer;
+- *pruned*: facts inside a large tool output, which the parent replaces on compaction. A control: both
+  engines lose these by design, and a hit there means the summary happened to quote the log.
+
+`python bench/fact_recall.py --tokens 20000`, one 202-message transcript (~18k tokens), nine facts.
+
+| arm | tail | middle | pruned | prompt tokens | cache hit | billed | latency | messages |
+|---|---|---|---|---|---|---|---|---|
+| built-in | 3/3 | 3/3 | 0/3 | 8 295 | 0 % | 0.0172 USD | 128.9 s | 202 to 10 |
+| plugin | 3/3 | 3/3 | 0/3 | 23 470 | 92.7 % | 0.0031 USD | 27.1 s | 202 to 10 |
+
+Read it as a control on quality, not as a tie-breaker: on this transcript both engines keep exactly
+what they are supposed to keep, and the pruned family is lost by both, which confirms the family
+measures pruning and not the summarizer. The difference is the bill: 5.5 times cheaper and 4.7 times
+faster for the plugin, consistent with the whole-compaction numbers above. The probe only
+discriminates when a summary actually drops a fact, and one transcript at one size is not enough to
+find that boundary; it is a floor, not a curve.
+
+## 5. Heterogeneous transcripts
+
+Everything above uses one synthetic transcript shape. Real sessions differ in length, tool density
+and history, so this experiment runs both engines over a stratified sample of a real local session
+store: short (under 40 messages) and long (over 60), tool-heavy preferred, each capped at 12k tokens
+head and tail.
+
+Privacy is the constraint, not an afterthought. `bench/anonymize.py` masks credentials and tokens
+(OpenAI, GitHub, GitLab, AWS, JWTs, `key=value` secrets), emails, IPv4 addresses, phone numbers, URLs
+(userinfo dropped, hosts mapped to `host-N.invalid`, query values dropped), home directories and an
+explicit list of names. A canary corpus plants one sentinel per category and the probe refuses to run
+if any survives; a leak guard then scans every 30-character window of every transcript against the
+serialized report before writing it. What is published is the report: counters only.
+
+Known limit, stated rather than hidden: free-text person and place names that no pattern catches are
+not masked by construction. The canary covers the categories above, and the probe is meant for one's
+own corpus, not for someone else's.
