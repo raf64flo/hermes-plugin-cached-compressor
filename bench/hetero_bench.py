@@ -142,11 +142,20 @@ def main() -> int:
             arm = harness.run_arm(kind, messages, harness.MODEL)
             arm.pop("summary", None)          # content must not reach the report
             record["arms"][kind] = arm
+        # A silent fallback would masquerade as a plugin measurement: the prefix arm sends the
+        # transcript, the built-in path sends its own much smaller window.
+        plugin = record["arms"]["plugin"]
+        record["plugin_used_prefix"] = plugin["prompt_tokens"] >= 0.5 * session["approx_tokens"]
+        if not record["plugin_used_prefix"]:
+            print(f"  warning {record['session']}: the plugin fell back to the built-in path "
+                  f"({plugin['prompt_tokens']} prompt tokens for {session['approx_tokens']} in the "
+                  f"transcript); this session does not measure the prefix engine")
         report["sessions"].append(record)
-        builtin, plugin = record["arms"]["builtin"], record["arms"]["plugin"]
+        builtin = record["arms"]["builtin"]
         print(f"{record['session']} msgs={record['messages']:4d} "
               f"cost builtin={builtin['cost_usd']} plugin={plugin['cost_usd']} "
-              f"hit={plugin['cache_hit']} latency={plugin['latency_s']}s")
+              f"hit={plugin['cache_hit']} prefix={record['plugin_used_prefix']} "
+              f"latency={plugin['latency_s']}s")
 
     serialized = json.dumps(report)
     leaked = [window for window in _leak_windows(sessions) if window in serialized]
