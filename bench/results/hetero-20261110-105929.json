@@ -1,0 +1,238 @@
+{
+ "date": "2026-11-10T09:50:11Z",
+ "model": "deepseek-v4.1-flash",
+ "sessions": [
+  {
+   "session": "5f3764e77a64",
+   "messages": 45,
+   "approx_tokens": 6838,
+   "warm": {
+    "attempts": 4,
+    "hit": 0.9931
+   },
+   "arms": {
+    "builtin": {
+     "arm": "builtin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 2790,
+     "cached_tokens": 0,
+     "cache_hit": 0.0,
+     "completion_tokens": 6011,
+     "cost_usd": 0.00805,
+     "latency_s": 34.2,
+     "messages_before": 45,
+     "messages_after": 42,
+     "call_details": [
+      {
+       "messages": 1,
+       "prompt_tokens": 2790,
+       "cached_tokens": 0,
+       "completion_tokens": 6011,
+       "cost_usd": 0.0080502,
+       "duration_s": 34.12
+      }
+     ]
+    },
+    "plugin": {
+     "arm": "plugin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 7090,
+     "cached_tokens": 5248,
+     "cache_hit": 0.7402,
+     "completion_tokens": 5020,
+     "cost_usd": 0.006608,
+     "latency_s": 30.6,
+     "messages_before": 45,
+     "messages_after": 42,
+     "call_details": [
+      {
+       "messages": 8,
+       "prompt_tokens": 7090,
+       "cached_tokens": 5248,
+       "completion_tokens": 5020,
+       "cost_usd": 0.00660809,
+       "duration_s": 30.5
+      }
+     ]
+    }
+   },
+   "plugin_used_prefix": true
+  },
+  {
+   "session": "dc25588ebb36",
+   "messages": 55,
+   "approx_tokens": 8488,
+   "warm": {
+    "attempts": 4,
+    "hit": 0.9958
+   },
+   "arms": {
+    "builtin": {
+     "arm": "builtin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 2612,
+     "cached_tokens": 0,
+     "cache_hit": 0.0,
+     "completion_tokens": 4110,
+     "cost_usd": 0.005716,
+     "latency_s": 25.9,
+     "messages_before": 55,
+     "messages_after": 49,
+     "call_details": [
+      {
+       "messages": 1,
+       "prompt_tokens": 2612,
+       "cached_tokens": 0,
+       "completion_tokens": 4110,
+       "cost_usd": 0.0057156,
+       "duration_s": 25.85
+      }
+     ]
+    },
+    "plugin": {
+     "arm": "plugin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 6098,
+     "cached_tokens": 4096,
+     "cache_hit": 0.6717,
+     "completion_tokens": 4863,
+     "cost_usd": 0.006461,
+     "latency_s": 30.9,
+     "messages_before": 55,
+     "messages_after": 49,
+     "call_details": [
+      {
+       "messages": 14,
+       "prompt_tokens": 6098,
+       "cached_tokens": 4096,
+       "completion_tokens": 4863,
+       "cost_usd": 0.00646078,
+       "duration_s": 30.89
+      }
+     ]
+    }
+   },
+   "plugin_used_prefix": true
+  },
+  {
+   "session": "ef69c96cbd26",
+   "messages": 21,
+   "approx_tokens": 4418,
+   "warm": {
+    "attempts": 4,
+    "hit": 0.9946
+   },
+   "arms": {
+    "builtin": {
+     "arm": "builtin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 4151,
+     "cached_tokens": 0,
+     "cache_hit": 0.0,
+     "completion_tokens": 6270,
+     "cost_usd": 0.008769,
+     "latency_s": 39.0,
+     "messages_before": 21,
+     "messages_after": 16,
+     "call_details": [
+      {
+       "messages": 1,
+       "prompt_tokens": 4151,
+       "cached_tokens": 0,
+       "completion_tokens": 6270,
+       "cost_usd": 0.0087693,
+       "duration_s": 38.92
+      }
+     ]
+    },
+    "plugin": {
+     "arm": "plugin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 8605,
+     "cached_tokens": 6784,
+     "cache_hit": 0.7884,
+     "completion_tokens": 5343,
+     "cost_usd": 0.006999,
+     "latency_s": 93.1,
+     "messages_before": 21,
+     "messages_after": 16,
+     "call_details": [
+      {
+       "messages": 13,
+       "prompt_tokens": 8605,
+       "cached_tokens": 6784,
+       "completion_tokens": 5343,
+       "cost_usd": 0.0069986,
+       "duration_s": 93.03
+      }
+     ]
+    }
+   },
+   "plugin_used_prefix": true
+  },
+  {
+   "session": "a714b5bda975",
+   "messages": 72,
+   "approx_tokens": 9588,
+   "warm": {
+    "attempts": 4,
+    "hit": 0.9918
+   },
+   "arms": {
+    "builtin": {
+     "arm": "builtin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 4287,
+     "cached_tokens": 0,
+     "cache_hit": 0.0,
+     "completion_tokens": 12603,
+     "cost_usd": 0.01641,
+     "latency_s": 77.6,
+     "messages_before": 72,
+     "messages_after": 48,
+     "call_details": [
+      {
+       "messages": 1,
+       "prompt_tokens": 4287,
+       "cached_tokens": 0,
+       "completion_tokens": 12603,
+       "cost_usd": 0.0164097,
+       "duration_s": 77.49
+      }
+     ]
+    },
+    "plugin": {
+     "arm": "plugin",
+     "model": "deepseek-v4.1-flash",
+     "calls": 1,
+     "prompt_tokens": 7391,
+     "cached_tokens": 5632,
+     "cache_hit": 0.762,
+     "completion_tokens": 4354,
+     "cost_usd": 0.005786,
+     "latency_s": 58.5,
+     "messages_before": 72,
+     "messages_after": 48,
+     "call_details": [
+      {
+       "messages": 29,
+       "prompt_tokens": 7391,
+       "cached_tokens": 5632,
+       "completion_tokens": 4354,
+       "cost_usd": 0.00578629,
+       "duration_s": 58.45
+      }
+     ]
+    }
+   },
+   "plugin_used_prefix": true
+  }
+ ]
+}

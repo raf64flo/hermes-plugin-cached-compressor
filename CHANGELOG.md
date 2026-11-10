@@ -11,6 +11,8 @@
   real local session store. Masking covers credentials, emails, addresses, URLs, home paths and
   explicit names; a canary corpus fails the run if a sentinel survives, and a leak guard scans the
   serialized report for transcript windows before writing it. Published output: counters only.
+  Measured on four sessions (21 to 72 kept messages): 34 % cheaper in total (0.0259 against 0.0389
+  USD), 20 % slower, cache hit 67 to 79 % instead of the 92 to 96 % the synthetic transcripts reach.
 - `tests/test_bench_probes.py`: the canary, its negative case, and the probes' self-tests now run in
   CI (83 tests).
 - Hermes 0.23.1: verified, no code change needed. The release refactored `ContextCompressor` into
