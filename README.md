@@ -223,9 +223,10 @@ write to a slot the engine never reads.
 
     HERMES_SOURCE=~/.hermes/hermes-agent python -m pytest tests -q
 
-78 tests, no network, no API key. `HERMES_SOURCE` points at a Hermes source checkout (the plugin
-imports `agent.*`). CI runs the suite against the declared minimum (`v0.23.0`) and against `main`,
-the latter allowed to fail.
+83 tests, no network, no API key. `HERMES_SOURCE` points at a Hermes source checkout (the plugin
+imports `agent.*`). CI runs the suite against the declared minimum (`v0.23.0`), the current release
+(`v0.23.1`), and `main`, the latter allowed to fail. The bench probes' guards (anonymizer canary,
+leak check, self-tests) run in the same suite.
 
 Catalog validation is a manual pre-release check, because the CLI needs a fully installed Hermes:
 
@@ -235,6 +236,12 @@ Live probes, which do need a provider key, are in `probes/`:
 
     HERMES_API_KEY=... python probes/cache_hit_live.py     # writer + reader, real assembly path
     HERMES_API_KEY=... python probes/compress_live.py      # full compress(), slot and telemetry
+
+Two experiments have their own entry points, both with a network-free `--self-test`:
+
+    BENCH_API_KEY=... python bench/fact_recall.py --tokens 20000   # which facts survive compaction
+    BENCH_API_KEY=... python bench/hetero_bench.py --sessions 4    # real, masked local transcripts
+    python bench/anonymize.py --canary                             # the masking guard, no network
 
 ## Known limitations
 
