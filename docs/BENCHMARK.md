@@ -213,8 +213,9 @@ find that boundary; it is a floor, not a curve.
 
 Everything above uses one synthetic transcript shape. Real sessions differ in length, tool density
 and history, so this experiment runs both engines over a stratified sample of a real local session
-store: short (under 40 messages) and long (over 60), tool-heavy preferred, each capped at 12k tokens
-head and tail.
+store: medium sessions (80 to 200 messages) and large ones (over 200), tool-heavy preferred, each
+capped at 12k tokens head and tail. Only sessions long enough to compact are eligible: the engines
+protect the last 20 messages, so a shorter session would measure the tail guard, not the summarizer.
 
 Privacy is the constraint, not an afterthought. `bench/anonymize.py` masks credentials and tokens
 (OpenAI, GitHub, GitLab, AWS, JWTs, `key=value` secrets), emails, IPv4 addresses, phone numbers, URLs
@@ -226,3 +227,25 @@ serialized report before writing it. What is published is the report: counters o
 Known limit, stated rather than hidden: free-text person and place names that no pattern catches are
 not masked by construction. The canary covers the categories above, and the probe is meant for one's
 own corpus, not for someone else's.
+
+`python bench/hetero_bench.py --sessions 4`, four masked sessions (21 to 72 kept messages, 3.9k to
+9.6k tokens), same model and router:
+
+| session | messages | prefix used | built-in tokens | built-in hit | built-in cost | plugin tokens | plugin hit | plugin cost | output built-in / plugin |
+|---|---|---|---|---|---|---|---|---|---|
+| `5f3764e77a64` | 45 | yes | 2 790 | 0 % | 0.00805 USD | 7 090 | 74.0 % | 0.00661 USD | 6 011 / 5 020 |
+| `dc25588ebb36` | 55 | yes | 2 612 | 0 % | 0.00572 USD | 6 098 | 67.2 % | 0.00646 USD | 4 110 / 4 863 |
+| `ef69c96cbd26` | 21 | yes | 4 151 | 0 % | 0.00877 USD | 8 605 | 78.8 % | 0.00700 USD | 6 270 / 5 343 |
+| `a714b5bda975` | 72 | yes | 4 287 | 0 % | 0.01641 USD | 7 391 | 76.2 % | 0.00579 USD | 12 603 / 4 354 |
+| total | | | | | 0.0389 USD, 177 s | | | 0.0259 USD, 213 s | |
+
+On these four real sessions the plugin is 34 % cheaper in total and 20 % slower, and the cache hit is
+67 to 79 %, not the 92 to 96 % the synthetic transcripts reach: real histories are messier. It writes
+less output in three sessions out of four, which is where most of the saving comes from here, not from
+the cache alone. n = 4, one model, one router: a direction, not a law.
+
+An early run of this probe measured the wrong thing and said so in its own report: the anonymizer had
+dropped `tool_calls` and `tool_call_id`, the plugin's alignment failed, and the plugin arm silently ran
+the built-in path (1.7k prompt tokens for a 10k transcript). The probe now records
+`plugin_used_prefix` and warns when the prefix engine was not used, so a fallback cannot pass for a
+measurement.
