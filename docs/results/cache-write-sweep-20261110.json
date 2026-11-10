@@ -1,0 +1,208 @@
+{
+  "date": "2026-11-10T01:37:13+00:00",
+  "host": "opencode.ai",
+  "model": "deepseek-v4.1-flash",
+  "target_tokens": 4000,
+  "repeats": 6,
+  "runs": [
+    {
+      "delay_s": 0.0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 0,
+          "hit_ratio": 0.0,
+          "prefill_s": 1.44
+        },
+        {
+          "attempt": 2,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.11
+        },
+        {
+          "attempt": 3,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.69
+        },
+        {
+          "attempt": 4,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 3.91
+        },
+        {
+          "attempt": 5,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.19
+        },
+        {
+          "attempt": 6,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.2
+        }
+      ],
+      "first_hit_attempt": 2,
+      "mean_last_3_hit": 0.9676
+    },
+    {
+      "delay_s": 2.0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.2
+        },
+        {
+          "attempt": 2,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.27
+        },
+        {
+          "attempt": 3,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.02
+        },
+        {
+          "attempt": 4,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 0.79
+        },
+        {
+          "attempt": 5,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 0.71
+        },
+        {
+          "attempt": 6,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 0.68
+        }
+      ],
+      "first_hit_attempt": 1,
+      "mean_last_3_hit": 0.9676
+    },
+    {
+      "delay_s": 5.0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 0,
+          "hit_ratio": 0.0,
+          "prefill_s": 1.81
+        },
+        {
+          "attempt": 2,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.17
+        },
+        {
+          "attempt": 3,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.06
+        },
+        {
+          "attempt": 4,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.39
+        },
+        {
+          "attempt": 5,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.16
+        },
+        {
+          "attempt": 6,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3584,
+          "hit_ratio": 0.9676,
+          "prefill_s": 1.19
+        }
+      ],
+      "first_hit_attempt": 2,
+      "mean_last_3_hit": 0.9676
+    },
+    {
+      "delay_s": 10.0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 0,
+          "hit_ratio": 0.0,
+          "prefill_s": 1.8
+        },
+        {
+          "attempt": 2,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3456,
+          "hit_ratio": 0.933,
+          "prefill_s": 1.04
+        },
+        {
+          "attempt": 3,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 0,
+          "hit_ratio": 0.0,
+          "prefill_s": 1.21
+        },
+        {
+          "attempt": 4,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 0,
+          "hit_ratio": 0.0,
+          "prefill_s": 1.27
+        },
+        {
+          "attempt": 5,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 0,
+          "hit_ratio": 0.0,
+          "prefill_s": 0.97
+        },
+        {
+          "attempt": 6,
+          "prompt_tokens": 3704,
+          "cache_read_tokens": 3456,
+          "hit_ratio": 0.933,
+          "prefill_s": 0.93
+        }
+      ],
+      "first_hit_attempt": 2,
+      "mean_last_3_hit": 0.311
+    }
+  ],
+  "monotone": false,
+  "spread": 0.6566,
+  "verdict": "no monotone effect: the cache write does not wait for this delay; no knob, no sleep in the compaction path"
+}

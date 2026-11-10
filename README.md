@@ -195,6 +195,11 @@ observation decides. One observation is always on; two settings are optional, re
     hermes config set plugins.entries.cached-compressor.settings.min_cache_ratio 0.9
     hermes config set plugins.entries.cached-compressor.settings.force_builtin true
 
+There is no sleep or delay setting, and that is a measured decision, not an omission: the write
+window probe (`probes/cache_write_sweep.py`, 0/2/5/10 s) shows the prefix is readable on the second
+call of the same turn and that idling ten seconds makes the hit *worse*, not better. Details and
+the table: `docs/PROVIDERS.md`, "Cache write window".
+
 ## Design
 
 Two entry points in one package, both through `register(ctx)`:
