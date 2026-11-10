@@ -53,3 +53,24 @@ the plugin does by design, but the field is not always surfaced.
 Both end up on the fallback path. That is deliberate: without a billed cache read there is nothing to
 save on a metered route, and paying the full price for a longer prefix is strictly worse than the
 built-in's serialized window.
+
+## Cache write window
+
+Compaction happens right after the main call of the same turn, so the only question is whether the
+prefix written by that call is readable seconds later. Measured with `probes/cache_write_sweep.py`
+on the reference router (`deepseek-v4.1-flash`, 24 identical 3 704-token posts, 2026-11-10; report
+in `docs/results/cache-write-sweep-20261110.json`):
+
+| idle before each post | hit ratios | mean of the last three |
+|---|---|---|
+| 0 s | 0, 97, 97, 97, 97, 97 % | 97 % |
+| 2 s | 97, 97, 97, 97, 97, 97 % | 97 % |
+| 5 s | 0, 97, 97, 97, 97, 97 % | 97 % |
+| 10 s | 0, 93, 0, 0, 0, 93 % | 31 % |
+
+The write lands within a second of the first response (0 s series, second post served at 97 %), so
+there is no window to wait for. The 10 s series says the entry's lifetime is on the order of
+seconds and irregular: idle time does not make the read more likely, it makes it less. Hence no
+sleep knob in the compaction path, sleeping cannot buy a hit the cache will not serve and it takes
+a fixed cost on every turn. The 2 s series opening warm is the previous series' prefix still cached,
+not a faster write.

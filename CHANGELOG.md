@@ -19,7 +19,11 @@
   cache. Unset by default; a clear log line marks the forced fallback.
 - README: new "Tuning" section; test count and CI policy brought up to date.
 - `probes/`: the report probe honors `retry-after` on a 429, and `cache_write_sweep.py` measures
-  the cache write window (0/2/5/10 s) for the no-sleep decision.
+  the cache write window. Measured on the reference router (report in
+  `docs/results/cache-write-sweep-20261110.json`): the prefix is readable on the second call of the
+  same turn (97 % with no idle), and a 10 s idle makes the hit *worse* (0, 93, 0, 0, 0, 93 %), so
+  the window is short and irregular. Verdict: no delay knob in the compaction path, and the README
+  says so next to the two settings that do exist.
 
 ## 0.4.0 (2026-11-09)
 
