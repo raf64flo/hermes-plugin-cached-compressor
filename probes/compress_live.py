@@ -1,10 +1,10 @@
-"""Bout en bout : `compress()` complet du plugin, pas seulement l'appel de résumé.
+"""End to end: the plugin's full `compress()`, not just the summary call.
 
-Ce qui est vérifié, sur le vrai provider :
-- le cycle entier du parent tourne (élagage, tête/queue protégées, résumé, nettoyage) ;
-- le résumé a bien été produit depuis le préfixe fil (cached_tokens > 0 dans la télémétrie) ;
-- le transcript rendu est compact et contient la synthèse.
-Si l'alignement échoue, le parent reprend la main : on le voit à l'absence de cache_read_tokens.
+What is verified, against the real provider:
+- the parent's whole cycle runs (pruning, protected head/tail, summary, cleanup);
+- the summary really was produced from the wire prefix (cached_tokens > 0 in the telemetry);
+- the returned transcript is compact and contains the synthesis.
+If the alignment fails, the parent takes over: visible as a missing cache_read_tokens.
 """
 
 import importlib.util
@@ -57,13 +57,13 @@ def history(n=40):
     msgs = []
     body = ("    out.append(_enrich(r))\n    return out\n") * 30
     for i in range(n):
-        msgs.append({"role": "user", "content": f"  Tâche {i}: vérifie src/module_{i}.py  "})
+        msgs.append({"role": "user", "content": f"  Task {i}: check src/module_{i}.py  "})
         msgs.append({"role": "assistant", "content": "", "tool_calls": [{
             "id": f"call_{i}", "type": "function",
             "function": {"name": "read_file", "arguments": '{ "path" : "src/module_%d.py" }' % i}}]})
         msgs.append({"role": "tool", "tool_call_id": f"call_{i}", "name": "read_file",
                      "content": f"# src/module_{i}.py\n" + body})
-        msgs.append({"role": "assistant", "content": f"Module {i} inchangé, prochaine étape: patch."})
+        msgs.append({"role": "assistant", "content": f"Module {i} unchanged, next step: patch."})
     msgs.append({"role": "user", "content": "Continue."})
     return msgs
 
@@ -92,7 +92,7 @@ agent.tools = TOOLS
 
 msgs = history()
 
-# 1. la session écrit deux fois le même préfixe : le cache se remplit au deuxième passage
+# 1. the session writes the same prefix twice: the cache fills on the second pass
 wire_full = _iteration_summary_api_messages(agent, msgs)
 writer_body = _build_api_kwargs_for_mode(agent, wire_full)
 for attempt in (1, 2):
@@ -100,13 +100,13 @@ for attempt in (1, 2):
     print(f"writer{attempt} prompt={p:6d} cached={c:6d} hit={(c / p):5.1%}")
     time.sleep(2)
 
-# 2. le hook capture le payload tel quel
+# 2. the hook captures the payload as is
 cc.state.record_payload(
     request=writer_body, request_messages=writer_body["messages"],
     model=MODEL, provider="nous", base_url=BASE, api_mode="chat_completions",
     conversation_history=msgs, session_id="probe-compress")
 
-# 3. compress() complet, sur le transcript vivant
+# 3. full compress(), on the live transcript
 engine = cc.CachedCompressor(model=MODEL, provider="nous", api_key=KEY, base_url=BASE,
                              api_mode="chat_completions", config_context_length=200_000,
                              quiet_mode=True, protect_last_n=20)
@@ -129,29 +129,29 @@ cc.call_llm = real_call_llm
 telemetry = (getattr(engine, "_last_compression_telemetry", None)
              or getattr(engine, "_active_compression_telemetry", None) or {})
 print()
-print(f"messages  avant={len(msgs)} après={len(compacted)}")
-print(f"appels auxiliaires={len(sent)} messages_envoyés={sent}")
-print(f"télémétrie aux_prompt_tokens={telemetry.get('aux_prompt_tokens')} "
+print(f"messages  before={len(msgs)} after={len(compacted)}")
+print(f"auxiliary calls={len(sent)} messages_sent={sent}")
+print(f"telemetry aux_prompt_tokens={telemetry.get('aux_prompt_tokens')} "
       f"cache_read_tokens={telemetry.get('cache_read_tokens')} "
-      f"cache_read_ratio={telemetry.get('cache_read_ratio')} durée={elapsed:.1f}s")
-print(f"rôles rendus={[m.get('role') for m in compacted][:6]} ... "
+      f"cache_read_ratio={telemetry.get('cache_read_ratio')} elapsed={elapsed:.1f}s")
+print(f"returned roles={[m.get('role') for m in compacted][:6]} ... "
       f"{[m.get('role') for m in compacted][-3:]}")
 
 body = next((m.get("content") or "" for m in compacted
              if m.get("role") == "user" and "Historical Task Snapshot" in (m.get("content") or "")), "")
 print()
-print("--- structure du transcript compacté ---")
+print("--- compacted transcript structure ---")
 for i, m in enumerate(compacted[:5]):
     print(f"  [{i}] {m.get('role'):9s} {(m.get('content') or '')[:90]!r}")
 biggest = max(compacted, key=lambda m: len(m.get("content") or ""))
-print(f"  plus long message : role={biggest.get('role')} chars={len(biggest.get('content') or '')}")
+print(f"  longest message: role={biggest.get('role')} chars={len(biggest.get('content') or '')}")
 print()
-print("--- début de la synthèse insérée ---")
+print("--- start of the inserted synthesis ---")
 print((biggest.get("content") or "")[:700])
 print()
 with open(f"{REPO}/probes/last_compress.json", "w", encoding="utf-8") as fh:
     json.dump(compacted, fh, ensure_ascii=False, indent=1)
-print("transcript écrit dans probes/last_compress.json")
+print("transcript written to probes/last_compress.json")
 print()
-print("VERDICT:", "préfixe réutilisé" if (telemetry.get("cache_read_tokens") or 0) > 0
-      else "repli parent (aucun hit)")
+print("VERDICT:", "prefix reused" if (telemetry.get("cache_read_tokens") or 0) > 0
+      else "parent fallback (no hit)")
