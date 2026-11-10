@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Hermes 0.23.1: verified, no code change needed. The release refactored `ContextCompressor` into
+  mixins and trimmed `hermes_cli/plugins.py`, but `compress(messages)`, the `hermes_cli.lifecycle`
+  hook dispatch, the `pre_api_request` / `post_api_request` payload keys and
+  `usage.cache_read_tokens` are unchanged. The suite (78 tests) and `hermes plugins validate` pass
+  against it; `v0.23.1` joins the CI matrix next to the declared minimum.
 - `plugin.yaml`: the version gate now uses `requires_hermes: ">=0.23.0"`, the field Hermes actually
   reads. The previous `hermes.min_version` block was never loaded (verified against the manifest
   parser: the `hermes` key is reserved but unconsumed for native `plugin.yaml` files), so the gate
