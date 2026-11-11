@@ -295,12 +295,12 @@ provider's cache state is not controllable from the client: it depends on which 
 which blocks it still holds. The billed cost remains a fact, because it is what the invoice says; the hit
 percentage is not a reliable intermediate.
 
-## Speed: measured twice, not reportable
+## Speed: not answerable on the router, answered on a local server
 
-Two protocols were run, and both are recorded as failures rather than results.
+Two protocols were run against the router, and both are recorded as failures rather than results.
 
 A streaming call returns one hundred and twenty chunks in one tenth of a second after a first packet at 1.64 s:
-the gateway buffers the answer and replays it, so time to first token is not a prefill measurement here.
+the gateway buffers the answer and replays it, so time to first token is not a prefill measurement there.
 
 A two-point calibration does work: two output budgets on the same prompt give a decoding slope of 0.0041 s per
 token, about 245 tokens per second, and subtracting it from a service time leaves the reading time. Applied to
@@ -308,14 +308,38 @@ B and C over three sessions and three repetitions each, it gave 6.5 s of reading
 6.2 s in the cold one, with both arms reporting a hit above 98 % during that pass. The contrast the protocol was
 built to show had disappeared, because the cache state had changed between the two runs.
 
-The honest conclusion is that this route cannot answer "does the cache make compaction faster": the same bytes
-are warm in one pass and cold in the next, and the client cannot force either. Answering it needs a provider
-whose cache is deterministic, or a self-hosted vLLM where `--enable-prefix-caching` is a setting rather than a
-policy.
+That route cannot answer the question: the same bytes are warm in one pass and cold in the next, and the client
+cannot force either. A local server can, because it holds one KV cache, routes nothing, and publishes what it
+reused per request. The measurement below was taken on `llama-server` b12262, `Qwen2.5-7B-Instruct-Q4_K_M`,
+one slot, `temperature 0`, 16 384 tokens of context, on a 12 GB laptop GPU.
+
+Protocol, per session: send the conversation once (that is the premise of the plugin, the material has just
+been sent), then B, then C, then C a second time. Four sessions whose material had never been through the
+server, checked by the priming call reporting `cache_n = 0`.
+
+| arm | form | cache_n | tokens re-read | reading time | full call |
+|---|---|---|---|---|---|
+| B | instruction appended | 7 890 | 56 | 35.0 ms | 1.17 s |
+| C | instruction first | 0 | 7 946 | 2 592.9 ms | 4.16 s |
+| C again | instruction first | 7 946 | 55 | 19.9 ms | 1.14 s |
+
+**Moving the instruction to the front throws the prefix away.** The conversation is in the cache, the plugin
+form reuses all of it and reads only the instruction, fifty-six tokens. The native form re-reads the whole
+material, because its first token differs. On the same material, same model, same machine: seventy-four times
+less reading, and three and a half times less wall clock per compression.
+
+**The third line proves what the cache follows.** The same instruction-first request, sent a second time, is
+immediately warm, which rules out the arm itself as the cause: what costs is not the order, it is that the
+order changed since the material was sent.
+
+Two things this does not say. It does not transfer to a router whose cache or routing you do not control, which
+is why the section above exists. And it measures a seven-billion-parameter model on one machine, so the
+absolute times are not comparable to the router's, only the ratio between the two forms on identical hardware.
 
 ## Limits
 
 Six sessions, one repetition, one router, six events per arm. Anchors are thin, two to seven per session, and
 questions could be built for only three sessions of six, so the quality figures are a direction rather than a
 measurement with error bars. The cache hit is reported for information and is not used as evidence anywhere.
-No speed claim is made, for the reason above.
+No speed claim is made about the router, for the reason above; the local measurement is a separate result, on
+one seven-billion-parameter model and one machine.

@@ -111,8 +111,11 @@ six sessions. It also keeps eight anchors of 23 where the instruction-first form
 of 17 questions where that form answers none. The earlier figures, 34 % cheaper over four sessions and a
 67 to 79 % cache hit, are withdrawn: the hit was measured by a probe that ran before the call and cached the
 bytes it was about to measure, and the 34 % mixed two effects that section 5 now separates. The comparison
-against a cheap auxiliary is unchanged in shape: it costs less, and it summarizes less faithfully. No speed
-claim is made: two timing protocols were run and both failed on this router, for reasons section 5 records.
+against a cheap auxiliary is unchanged in shape: it costs less, and it summarizes less faithfully. The speed
+question is answered separately, on a local server that exposes its prefix cache: with the same material on the
+same machine, appending the instruction reads 56 tokens where moving it to the front re-reads 7 946, which is
+35 ms against 2 593 ms and 1.17 s against 4.16 s for the whole call. No speed claim is made about the router,
+where two timing protocols were run and both failed for reasons section 5 records.
 
 ## When it does not help
 
