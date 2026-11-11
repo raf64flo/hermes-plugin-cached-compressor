@@ -101,6 +101,22 @@ auxiliary, which is rare. Against a cheap auxiliary it buys a better summary, no
 Protocol, per-run tables, why the hit is capped near 96 %, the summary-input coverage of both
 engines, and the reproduction commands: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
+### Correction, 2026-11-11
+
+The event-level benchmark in section 5 was rebuilt, and it withdraws two numbers. Measured on the call
+itself, with the same material and the same instruction for every arm, the plugin's form costs 2.4 times
+less per compression than the same model with the instruction moved to the front, and 3.2 times less than
+the same bytes in a session that never carried them: 0.00055 USD per event against 0.00135 and 0.00175, over
+six sessions. It also keeps eight anchors of 23 where the instruction-first form keeps one, and answers five
+of 17 questions where that form answers none. The earlier figures, 34 % cheaper over four sessions and a
+67 to 79 % cache hit, are withdrawn: the hit was measured by a probe that ran before the call and cached the
+bytes it was about to measure, and the 34 % mixed two effects that section 5 now separates. The comparison
+against a cheap auxiliary is unchanged in shape: it costs less, and it summarizes less faithfully. The speed
+question is answered separately, on a local server that exposes its prefix cache: with the same material on the
+same machine, appending the instruction reads 56 tokens where moving it to the front re-reads 7 946, which is
+35 ms against 2 593 ms and 1.17 s against 4.16 s for the whole call. No speed claim is made about the router,
+where two timing protocols were run and both failed for reasons section 5 records.
+
 ## When it does not help
 
 The design assumes the provider reports cache reads in `usage.prompt_tokens_details.cached_tokens`.

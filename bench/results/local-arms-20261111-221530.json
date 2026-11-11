@@ -1,0 +1,150 @@
+{
+ "server": "http://127.0.0.1:8090",
+ "instruction": "Summarise the conversation above for an engineer who has to resume the work. Keep every file path with its line number, every identifier, every measured number with its unit, the decisions taken and what is still open. No preamble. At most 250 words.",
+ "passes": [
+  {
+   "session": "5f3764e77a64",
+   "repeat": 1,
+   "prime": {
+    "cache_n": 0,
+    "prompt_n": 6524,
+    "prompt_ms": 2131.3,
+    "decode_tps": 0.0,
+    "out": 1,
+    "wall_s": 2.17
+   },
+   "B": {
+    "cache_n": 6523,
+    "prompt_n": 56,
+    "prompt_ms": 34.5,
+    "decode_tps": 57.2,
+    "out": 64,
+    "wall_s": 1.17
+   },
+   "C": {
+    "cache_n": 0,
+    "prompt_n": 6579,
+    "prompt_ms": 2087.1,
+    "decode_tps": 58.2,
+    "out": 64,
+    "wall_s": 3.55
+   },
+   "C2": {
+    "cache_n": 6578,
+    "prompt_n": 1,
+    "prompt_ms": 20.0,
+    "decode_tps": 58.1,
+    "out": 64,
+    "wall_s": 1.14
+   }
+  },
+  {
+   "session": "dc25588ebb36",
+   "repeat": 1,
+   "prime": {
+    "cache_n": 0,
+    "prompt_n": 9259,
+    "prompt_ms": 3063.7,
+    "decode_tps": 0.0,
+    "out": 1,
+    "wall_s": 3.47
+   },
+   "B": {
+    "cache_n": 9258,
+    "prompt_n": 56,
+    "prompt_ms": 35.6,
+    "decode_tps": 57.3,
+    "out": 64,
+    "wall_s": 1.18
+   },
+   "C": {
+    "cache_n": 0,
+    "prompt_n": 9314,
+    "prompt_ms": 3098.8,
+    "decode_tps": 56.9,
+    "out": 64,
+    "wall_s": 4.77
+   },
+   "C2": {
+    "cache_n": 9313,
+    "prompt_n": 1,
+    "prompt_ms": 20.8,
+    "decode_tps": 57.9,
+    "out": 64,
+    "wall_s": 1.15
+   }
+  },
+  {
+   "session": "ef69c96cbd26",
+   "repeat": 1,
+   "prime": {
+    "cache_n": 0,
+    "prompt_n": 3208,
+    "prompt_ms": 990.4,
+    "decode_tps": 0.0,
+    "out": 1,
+    "wall_s": 1.45
+   },
+   "B": {
+    "cache_n": 3207,
+    "prompt_n": 56,
+    "prompt_ms": 33.0,
+    "decode_tps": 60.9,
+    "out": 64,
+    "wall_s": 1.09
+   },
+   "C": {
+    "cache_n": 0,
+    "prompt_n": 3263,
+    "prompt_ms": 983.9,
+    "decode_tps": 60.4,
+    "out": 64,
+    "wall_s": 2.21
+   },
+   "C2": {
+    "cache_n": 3262,
+    "prompt_n": 1,
+    "prompt_ms": 18.2,
+    "decode_tps": 60.5,
+    "out": 64,
+    "wall_s": 1.08
+   }
+  },
+  {
+   "session": "a714b5bda975",
+   "repeat": 1,
+   "prime": {
+    "cache_n": 0,
+    "prompt_n": 10416,
+    "prompt_ms": 3526.9,
+    "decode_tps": 0.0,
+    "out": 1,
+    "wall_s": 3.73
+   },
+   "B": {
+    "cache_n": 10415,
+    "prompt_n": 56,
+    "prompt_ms": 38.0,
+    "decode_tps": 56.9,
+    "out": 64,
+    "wall_s": 1.21
+   },
+   "C": {
+    "cache_n": 0,
+    "prompt_n": 10471,
+    "prompt_ms": 3554.8,
+    "decode_tps": 56.5,
+    "out": 64,
+    "wall_s": 5.24
+   },
+   "C2": {
+    "cache_n": 10470,
+    "prompt_n": 1,
+    "prompt_ms": 22.1,
+    "decode_tps": 56.6,
+    "out": 64,
+    "wall_s": 1.17
+   }
+  }
+ ]
+}
