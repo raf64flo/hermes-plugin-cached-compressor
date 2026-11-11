@@ -101,6 +101,18 @@ auxiliary, which is rare. Against a cheap auxiliary it buys a better summary, no
 Protocol, per-run tables, why the hit is capped near 96 %, the summary-input coverage of both
 engines, and the reproduction commands: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
+### Correction, 2026-11-11
+
+The event-level benchmark in section 5 was rebuilt, and it withdraws two numbers. Measured on the call
+itself, with a session that has just run and the same material for every arm, the plugin's form costs
+4.0 to 4.4 times less per compression than the same model with the instruction moved to the front, or
+with a session that never carried the material: 0.00117 USD per event against 0.00468 and 0.00516. It
+also keeps four anchors of twelve where the instruction-first form keeps none of nine. The earlier
+figures, 34 % cheaper over four sessions and a 67 to 79 % cache hit, are withdrawn: the hit was measured
+by a probe that ran before the call and cached the bytes it was about to measure, and the 34 % mixed two
+effects that section 5 now separates. The comparison against a cheap auxiliary is unchanged in shape: it
+costs less, and it summarizes less faithfully.
+
 ## When it does not help
 
 The design assumes the provider reports cache reads in `usage.prompt_tokens_details.cached_tokens`.

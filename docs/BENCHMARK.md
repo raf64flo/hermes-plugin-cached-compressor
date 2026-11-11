@@ -209,43 +209,99 @@ faster for the plugin, consistent with the whole-compaction numbers above. The p
 discriminates when a summary actually drops a fact, and one transcript at one size is not enough to
 find that boundary; it is a floor, not a curve.
 
-## 5. Heterogeneous transcripts
+## 5. One compression event, on real sessions
 
-Everything above uses one synthetic transcript shape. Real sessions differ in length, tool density
-and history, so this experiment runs both engines over a stratified sample of a real local session
-store: medium sessions (80 to 200 messages) and large ones (over 200), tool-heavy preferred, each
-capped at 12k tokens head and tail. Only sessions long enough to compact are eligible: the engines
-protect the last 20 messages, so a shorter session would measure the tail guard, not the summarizer.
+The unit that matters is the event, not the context that comes out of it. When a compaction fires, one call
+has to read the material and write a summary, and that call is where the money goes. Four ways to pay for it,
+on the same material, in the same message format:
 
-Privacy is the constraint, not an afterthought. `bench/anonymize.py` masks credentials and tokens
-(OpenAI, GitHub, GitLab, AWS, JWTs, `key=value` secrets), emails, IPv4 addresses, phone numbers, URLs
-(userinfo dropped, hosts mapped to `host-N.invalid`, query values dropped), home directories and an
-explicit list of names. A canary corpus plants one sentinel per category and the probe refuses to run
-if any survives; a leak guard then scans every 30-character window of every transcript against the
-serialized report before writing it. What is published is the report: counters only.
+| arm | model | instruction | session | what it represents |
+|---|---|---|---|---|
+| A | `gemma-4-31b-it` | first, then the material | separate route | the auxiliary summarizer |
+| B | `deepseek-v4.1-flash` | appended after the material | the session that just ran | the plugin as deployed |
+| C | `deepseek-v4.1-flash` | first, then the material | the session that just ran | the same model, without the prefix |
+| B' | `deepseek-v4.1-flash` | appended after the material | a session that never saw the material | the plugin without a warm session |
 
-Known limit, stated rather than hidden: free-text person and place names that no pattern catches are
-not masked by construction. The canary covers the categories above, and the probe is meant for one's
-own corpus, not for someone else's.
+B against C isolates the position of the instruction at constant model, constant content and constant session.
+B against B' isolates what reusing the session buys. C against A isolates the model at constant request shape.
+Nothing else differs: the four arms receive the material truncated at the same point, the protected tail is
+excluded for all of them, and the instruction text is byte-identical.
 
-`python bench/hetero_bench.py --sessions 4`, four masked sessions (21 to 72 kept messages, 3.9k to
-9.6k tokens), same model and router:
+Privacy is the constraint, not an afterthought. `bench/anonymize.py` masks credentials and tokens (OpenAI,
+GitHub, GitLab, AWS, JWTs, `key=value` secrets), emails, IPv4 addresses, phone numbers, URLs (userinfo
+dropped, hosts mapped to `host-N.invalid`, query values dropped), home directories and an explicit list of
+names. A canary corpus plants one sentinel per category and the probe refuses to run if any survives; a leak
+guard then scans every 30-character window of every transcript against the serialized report before writing
+it. What is published is the report: counters only.
 
-| session | messages | prefix used | built-in tokens | built-in hit | built-in cost | plugin tokens | plugin hit | plugin cost | output built-in / plugin |
-|---|---|---|---|---|---|---|---|---|---|
-| `5f3764e77a64` | 45 | yes | 2 790 | 0 % | 0.00805 USD | 7 090 | 74.0 % | 0.00661 USD | 6 011 / 5 020 |
-| `dc25588ebb36` | 55 | yes | 2 612 | 0 % | 0.00572 USD | 6 098 | 67.2 % | 0.00646 USD | 4 110 / 4 863 |
-| `ef69c96cbd26` | 21 | yes | 4 151 | 0 % | 0.00877 USD | 8 605 | 78.8 % | 0.00700 USD | 6 270 / 5 343 |
-| `a714b5bda975` | 72 | yes | 4 287 | 0 % | 0.01641 USD | 7 391 | 76.2 % | 0.00579 USD | 12 603 / 4 354 |
-| total | | | | | 0.0389 USD, 177 s | | | 0.0259 USD, 213 s | |
+Known limit, stated rather than hidden: free-text person and place names that no pattern catches are not
+masked by construction. The canary covers the categories above, and the probe is meant for one's own corpus,
+not for someone else's.
 
-On these four real sessions the plugin is 34 % cheaper in total and 20 % slower, and the cache hit is
-67 to 79 %, not the 92 to 96 % the synthetic transcripts reach: real histories are messier. It writes
-less output in three sessions out of four, which is where most of the saving comes from here, not from
-the cache alone. n = 4, one model, one router: a direction, not a law.
+Quality is measured by containment, not by a judge. From the material, `bench/compaction_arms.py` draws up to
+three anchors of each kind with a fixed seed: a path, with its line number when it has one; a number, with its
+unit; a sentence carrying a decision marker. A summary keeps a path only if the file and the line both appear,
+keeps a number only if the unit survives, and keeps a decision only if the wording survives. Each kind is
+scored on its own terms, so a summary that drops every path is not hidden by one that keeps the numbers.
 
-An early run of this probe measured the wrong thing and said so in its own report: the anonymizer had
-dropped `tool_calls` and `tool_call_id`, the plugin's alignment failed, and the plugin arm silently ran
-the built-in path (1.7k prompt tokens for a 10k transcript). The probe now records
-`plugin_used_prefix` and warns when the prefix engine was not used, so a fallback cannot pass for a
-measurement.
+`python bench/compaction_arms.py --sessions 6 --repeats 1`, four anonymised sessions, tokens and billed cost as
+reported by the router, public list prices applied separately:
+
+| session | arm | cache hit | billed | at list prices | anchors | output |
+|---|---|---|---|---|---|---|
+| `5f3764e77a64` | A | 0 % | free | 0.00293 USD | 1/2 | 414 |
+| | B | 99 % | 0.00123 USD | 0.00272 USD | 1/2 | 916 |
+| | C | 0 % | 0.00521 USD | 0.00430 USD | 0/2 | 817 |
+| | B' | 0 % | 0.00488 USD | 0.00404 USD | 1/2 | 539 |
+| `dc25588ebb36` | A | 0 % | free | 0.00259 USD | 0/7 | 64 |
+| | B | 99 % | 0.00145 USD | 0.00282 USD | 2/7 | 1 092 |
+| | C | 1 % | 0.00415 USD | 0.00347 USD | 0/7 | 114 |
+| | B' | 1 % | 0.00543 USD | 0.00448 USD | 2/7 | 1 175 |
+| `ef69c96cbd26` | A | 1 % | free | 0.00132 USD | 1/3 | 366 |
+| | B | 96 % | 0.00084 USD | 0.00142 USD | 1/3 | 607 |
+| `a714b5bda975` | A | 0 % | free | 0.00208 USD | 0/6 | 65 |
+
+Three cells were lost to the router, which answered 429 after eight attempts; they are absent rather than
+estimated.
+
+**The instruction position decides the cache, and the cache decides the invoice.** B hits 96 to 99 %, while C,
+which carries the same content in the same session and only moves the instruction to the front, hits 0 to 1 %.
+The billed difference follows exactly: 0.00117 USD per event for B against 0.00468 for C and 0.00516 for B',
+so the plugin's form costs four times less than either alternative on this router.
+
+**Reusing the session is the whole mechanism.** B and B' send identical bytes with identical settings; the only
+difference is that B' runs in a session that never carried the material, and it pays 4.4 times more. The
+plugin's advantage is not that it writes a shorter summary, it is that the request it builds is a prefix of a
+request the router has already seen in that session.
+
+**The position also moves quality.** C keeps none of the nine anchors it was given against four of twelve for
+B, and it writes half as much output. The same model, told the same thing, summarises less well when the
+instruction comes first. That is a second, independent reason for the plugin's shape, and it is not a cache
+effect at all.
+
+**The invoice and the price list disagree by a factor of two.** For B, billed cost is 0.00352 USD where list
+prices give 0.00696 USD. The router's cache read is far cheaper than the 0.13 USD/M the public grid shows;
+the exact rate is not reconstructible without its own price sheet. This is why the report keeps both columns:
+the estimate answers "what would this cost elsewhere", the billed column answers "what did it cost here".
+
+## What changed in this section, and why
+
+The previous version reported the plugin 34 % cheaper over four sessions and a cache hit of 67 to 79 %. Both
+numbers are withdrawn.
+
+The hit figures came from a protocol that sent the probe before the measured call, which cached the exact
+bytes the measurement was about to read: a cold arm then reported a 98 % hit. The probe now runs after the
+call, and B' exists as a control precisely because that mistake is easy to make and invisible in the output.
+
+The 34 % figure was a total-cost comparison between two engines, not a comparison of compression events, and
+it mixed two effects: the plugin writes less output in most sessions, and it reuses the session prefix. The
+experiment above separates them, and the answer is that the session reuse is worth about a factor of four on
+this router, while the output length varies with the model and the instruction position.
+
+## Limits
+
+Four sessions, one repetition, one router, three cells lost to throttling. The anchors are few per session
+(two to seven), so the quality figures are a direction, not a measurement with error bars. The latency column
+is deliberately absent: this router throttled during the run, and a call that waits out two backoffs before
+succeeding reports a latency that measures the queue, not the model. Answering "does the cache make compaction
+faster" needs a route that is not under load, and that measurement is still open.
