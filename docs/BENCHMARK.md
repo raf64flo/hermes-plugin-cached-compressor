@@ -244,64 +244,78 @@ unit; a sentence carrying a decision marker. A summary keeps a path only if the 
 keeps a number only if the unit survives, and keeps a decision only if the wording survives. Each kind is
 scored on its own terms, so a summary that drops every path is not hidden by one that keeps the numbers.
 
-`python bench/compaction_arms.py --sessions 6 --repeats 1`, four anonymised sessions, tokens and billed cost as
-reported by the router, public list prices applied separately:
+`python bench/compaction_arms.py --sessions 6 --repeats 1`, six anonymised sessions, tokens and billed cost
+as reported by the router, public list prices applied separately:
 
-| session | arm | cache hit | billed | at list prices | anchors | output |
-|---|---|---|---|---|---|---|
-| `5f3764e77a64` | A | 0 % | free | 0.00293 USD | 1/2 | 414 |
-| | B | 99 % | 0.00123 USD | 0.00272 USD | 1/2 | 916 |
-| | C | 0 % | 0.00521 USD | 0.00430 USD | 0/2 | 817 |
-| | B' | 0 % | 0.00488 USD | 0.00404 USD | 1/2 | 539 |
-| `dc25588ebb36` | A | 0 % | free | 0.00259 USD | 0/7 | 64 |
-| | B | 99 % | 0.00145 USD | 0.00282 USD | 2/7 | 1 092 |
-| | C | 1 % | 0.00415 USD | 0.00347 USD | 0/7 | 114 |
-| | B' | 1 % | 0.00543 USD | 0.00448 USD | 2/7 | 1 175 |
-| `ef69c96cbd26` | A | 1 % | free | 0.00132 USD | 1/3 | 366 |
-| | B | 96 % | 0.00084 USD | 0.00142 USD | 1/3 | 607 |
-| `a714b5bda975` | A | 0 % | free | 0.00208 USD | 0/6 | 65 |
+| session | arm | cache hit | billed | anchors | questions |
+|---|---|---|---|---|---|
+| `5f3764e77a64` | B | 100 % | 0.00041 USD | 1/2 | 0/0 |
+| | C | 100 % | 0.00095 USD | 1/2 | 0/0 |
+| | B' | 100 % | 0.00087 USD | 1/2 | 0/0 |
+| `dc25588ebb36` | B | 99 % | 0.00065 USD | 2/7 | 3/6 |
+| | C | 0 % | 0.00210 USD | 0/7 | 0/6 |
+| | B' | 0 % | 0.00278 USD | 3/7 | 2/6 |
+| `ef69c96cbd26` | B | 96 % | 0.00047 USD | 2/3 | 0/0 |
+| | C | 0 % | 0.00132 USD | 1/3 | 0/0 |
+| | B' | 0 % | 0.00161 USD | 2/3 | 0/0 |
+| `a714b5bda975` | B | 99 % | 0.00041 USD | 1/6 | 1/5 |
+| | C | 0 % | 0.00247 USD | 0/6 | 0/5 |
+| | B' | 0 % | 0.00271 USD | 1/6 | 1/5 |
+| `d9e1f5960767` | B | 95 % | 0.00057 USD | 2/3 | 1/6 |
+| | C | 0 % | 0.00076 USD | 0/3 | 0/6 |
+| | B' | 14 % | 0.00114 USD | 2/3 | 2/6 |
+| `62d8996f4103` | B | 98 % | 0.00081 USD | 0/2 | 0/0 |
+| | C | 19 % | 0.00049 USD | 0/2 | 0/0 |
+| | B' | 0 % | 0.00141 USD | 0/2 | 0/0 |
 
-Three cells were lost to the router, which answered 429 after eight attempts; they are absent rather than
-estimated.
+The auxiliary arm A is free on its route and is not priced here; it kept 3 of 23 anchors and answered none of
+its 17 questions.
 
-**The instruction position decides the cache, and the cache decides the invoice.** B hits 96 to 99 %, while C,
-which carries the same content in the same session and only moves the instruction to the front, hits 0 to 1 %.
-The billed difference follows exactly: 0.00117 USD per event for B against 0.00468 for C and 0.00516 for B',
-so the plugin's form costs four times less than either alternative on this router.
+| arm | events | billed per event | anchors | questions | cache hit, median |
+|---|---|---|---|---|---|
+| A | 6 | free | 3/23 | 0/17 | 0 % |
+| B | 6 | 0.00055 USD | 8/23 | 5/17 | 98 % |
+| C | 6 | 0.00135 USD | 1/23 | 0/17 | 0 % |
+| B' | 6 | 0.00175 USD | 9/23 | 5/17 | 0 % |
 
-**Reusing the session is the whole mechanism.** B and B' send identical bytes with identical settings; the only
-difference is that B' runs in a session that never carried the material, and it pays 4.4 times more. The
-plugin's advantage is not that it writes a shorter summary, it is that the request it builds is a prefix of a
-request the router has already seen in that session.
+**The invoice follows the form of the request.** B costs 2.4 times less than C and 3.2 times less than B', on
+six sessions and twelve comparisons, with the same model, the same material and the same instruction.
 
-**The position also moves quality.** C keeps none of the nine anchors it was given against four of twelve for
-B, and it writes half as much output. The same model, told the same thing, summarises less well when the
-instruction comes first. That is a second, independent reason for the plugin's shape, and it is not a cache
-effect at all.
+**The reordering costs quality, independently of the cache.** C keeps one anchor of 23 and answers none of 17
+questions; B keeps eight and answers five. The two arms share every setting except where the instruction sits,
+so the difference is the form, not the model. The auxiliary model behaves like C: three anchors, no question
+answered. What it writes is shorter, and shorter is what loses the paths and the line numbers.
 
-**The invoice and the price list disagree by a factor of two.** For B, billed cost is 0.00352 USD where list
-prices give 0.00696 USD. The router's cache read is far cheaper than the 0.13 USD/M the public grid shows;
-the exact rate is not reconstructible without its own price sheet. This is why the report keeps both columns:
-the estimate answers "what would this cost elsewhere", the billed column answers "what did it cost here".
+**B' shows the same quality as B and a different bill.** Same bytes, same model, three times the cost, which
+confirms the saving comes from the request, not from the summary.
 
-## What changed in this section, and why
+**The counter cannot be trusted as a control.** In `5f3764e77a64`, B' reports a 100 % hit in a session that
+never sent the material, and one hour later C reports 99 % where it reported 0 % six times earlier. The
+provider's cache state is not controllable from the client: it depends on which instance serves the request and
+which blocks it still holds. The billed cost remains a fact, because it is what the invoice says; the hit
+percentage is not a reliable intermediate.
 
-The previous version reported the plugin 34 % cheaper over four sessions and a cache hit of 67 to 79 %. Both
-numbers are withdrawn.
+## Speed: measured twice, not reportable
 
-The hit figures came from a protocol that sent the probe before the measured call, which cached the exact
-bytes the measurement was about to read: a cold arm then reported a 98 % hit. The probe now runs after the
-call, and B' exists as a control precisely because that mistake is easy to make and invisible in the output.
+Two protocols were run, and both are recorded as failures rather than results.
 
-The 34 % figure was a total-cost comparison between two engines, not a comparison of compression events, and
-it mixed two effects: the plugin writes less output in most sessions, and it reuses the session prefix. The
-experiment above separates them, and the answer is that the session reuse is worth about a factor of four on
-this router, while the output length varies with the model and the instruction position.
+A streaming call returns one hundred and twenty chunks in one tenth of a second after a first packet at 1.64 s:
+the gateway buffers the answer and replays it, so time to first token is not a prefill measurement here.
+
+A two-point calibration does work: two output budgets on the same prompt give a decoding slope of 0.0041 s per
+token, about 245 tokens per second, and subtracting it from a service time leaves the reading time. Applied to
+B and C over three sessions and three repetitions each, it gave 6.5 s of reading in the warm session against
+6.2 s in the cold one, with both arms reporting a hit above 98 % during that pass. The contrast the protocol was
+built to show had disappeared, because the cache state had changed between the two runs.
+
+The honest conclusion is that this route cannot answer "does the cache make compaction faster": the same bytes
+are warm in one pass and cold in the next, and the client cannot force either. Answering it needs a provider
+whose cache is deterministic, or a self-hosted vLLM where `--enable-prefix-caching` is a setting rather than a
+policy.
 
 ## Limits
 
-Four sessions, one repetition, one router, three cells lost to throttling. The anchors are few per session
-(two to seven), so the quality figures are a direction, not a measurement with error bars. The latency column
-is deliberately absent: this router throttled during the run, and a call that waits out two backoffs before
-succeeding reports a latency that measures the queue, not the model. Answering "does the cache make compaction
-faster" needs a route that is not under load, and that measurement is still open.
+Six sessions, one repetition, one router, six events per arm. Anchors are thin, two to seven per session, and
+questions could be built for only three sessions of six, so the quality figures are a direction rather than a
+measurement with error bars. The cache hit is reported for information and is not used as evidence anywhere.
+No speed claim is made, for the reason above.

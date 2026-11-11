@@ -104,14 +104,15 @@ engines, and the reproduction commands: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 ### Correction, 2026-11-11
 
 The event-level benchmark in section 5 was rebuilt, and it withdraws two numbers. Measured on the call
-itself, with a session that has just run and the same material for every arm, the plugin's form costs
-4.0 to 4.4 times less per compression than the same model with the instruction moved to the front, or
-with a session that never carried the material: 0.00117 USD per event against 0.00468 and 0.00516. It
-also keeps four anchors of twelve where the instruction-first form keeps none of nine. The earlier
-figures, 34 % cheaper over four sessions and a 67 to 79 % cache hit, are withdrawn: the hit was measured
-by a probe that ran before the call and cached the bytes it was about to measure, and the 34 % mixed two
-effects that section 5 now separates. The comparison against a cheap auxiliary is unchanged in shape: it
-costs less, and it summarizes less faithfully.
+itself, with the same material and the same instruction for every arm, the plugin's form costs 2.4 times
+less per compression than the same model with the instruction moved to the front, and 3.2 times less than
+the same bytes in a session that never carried them: 0.00055 USD per event against 0.00135 and 0.00175, over
+six sessions. It also keeps eight anchors of 23 where the instruction-first form keeps one, and answers five
+of 17 questions where that form answers none. The earlier figures, 34 % cheaper over four sessions and a
+67 to 79 % cache hit, are withdrawn: the hit was measured by a probe that ran before the call and cached the
+bytes it was about to measure, and the 34 % mixed two effects that section 5 now separates. The comparison
+against a cheap auxiliary is unchanged in shape: it costs less, and it summarizes less faithfully. No speed
+claim is made: two timing protocols were run and both failed on this router, for reasons section 5 records.
 
 ## When it does not help
 

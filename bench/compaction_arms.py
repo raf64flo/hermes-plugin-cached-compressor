@@ -50,6 +50,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import anonymize  # noqa: E402
 import bench as harness  # noqa: E402
+import quality_probe  # noqa: E402
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 ALBERT_BASE = os.environ.get("ALBERT_BASE", "http://127.0.0.1:8060/v1")
@@ -147,7 +148,6 @@ class Transport:
         self.last_text = ""
 
     def __call__(self, **kwargs) -> object:
-        started = time.monotonic()
         body: dict = {"model": self.model, "messages": kwargs["messages"]}
         if kwargs.get("tools"):
             body["tools"] = kwargs["tools"]
@@ -158,10 +158,14 @@ class Transport:
             headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json",
                      "User-Agent": UA, "x-opencode-session": self.session})
         transient = (400, 408, 409, 425, 429, 500, 502, 503, 504, 529)
+        attempts, served = 0, 0.0
         for attempt in range(8):
+            attempts = attempt + 1
+            started = time.monotonic()
             try:
                 with urllib.request.urlopen(request, timeout=600) as response:
                     payload = json.loads(response.read())
+                served = time.monotonic() - started
                 break
             except urllib.error.HTTPError as exc:
                 # This route answers 400 as well as 429 when it is unhappy; both are replayed.
@@ -181,7 +185,8 @@ class Transport:
             "cached_tokens": cached,
             "completion_tokens": usage.get("completion_tokens") or 0,
             "finish_reason": choice.get("finish_reason"),
-            "latency_s": round(time.monotonic() - started, 2),
+            "service_s": round(served, 2),
+            "attempts": attempts,
             "cost_router_usd": (usage.get("opencode") or {}).get("list_cost"),
         })
         return SimpleNamespace(
@@ -217,7 +222,7 @@ def ingest(events: list[dict]) -> str:
 
 
 def event(call: dict, arm: str, session: str, repeat: int, kind: str) -> dict:
-    start = time.time() - call["latency_s"]
+    start = time.time() - call["service_s"]
     return {"type": "generation-create", "id": str(uuid.uuid4()),
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "body": {
@@ -230,6 +235,45 @@ def event(call: dict, arm: str, session: str, repeat: int, kind: str) -> dict:
                 "metadata": {"arm": arm, "kind": kind, "repeat": repeat,
                              "cached_tokens": call["cached_tokens"],
                              "cost_estimate_usd": estimate(call, "aux" if arm == "A" else "main")}}}
+
+
+def calibrate(material: list[dict], pause: float) -> float | None:
+    """Seconds per output token, from two output budgets on the same prompt.
+
+    Timing one call cannot separate reading from writing: a retry, a queue, a cold prefix all land in the
+    same number. Two budgets on the same bytes give a slope that none of those move. The second call also
+    runs warm, which removes the prefill from the difference entirely.
+    """
+    session = f"cal-{uuid.uuid4().hex[:6]}"
+    long_task = {"role": "user", "content": "List the integers from 1 to 400, one per line, nothing else."}
+    points: list[tuple[int, float]] = []
+    for budget in (64, 128, 256):
+        best: tuple[int, float] | None = None
+        for _ in range(2):
+            transport = Transport(harness.BASE, harness.MODEL, harness.KEY,
+                                  {"max_tokens": budget}, session=session)
+            try:
+                transport(messages=[*material, long_task], tools=harness.TOOLS)
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+                continue
+            call = transport.calls[-1]
+            reading = (call["completion_tokens"], call["service_s"])
+            # The minimum over two tries drops the queue: a backoff or a slow instance can only add time.
+            best = reading if best is None else (best[0], min(best[1], reading[1]))
+            time.sleep(pause)
+        if best:
+            points.append(best)
+    if len(points) < 2:
+        return None
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    mean_x, mean_y = sum(xs) / len(xs), sum(ys) / len(ys)
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in points)
+    denominator = sum((x - mean_x) ** 2 for x in xs)
+    if denominator == 0:
+        return None
+    slope = numerator / denominator
+    return round(slope, 5) if slope > 0 else None
 
 
 def sanitize(material: list[dict]) -> list[dict]:
@@ -277,6 +321,8 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--pause", type=float, default=3.0)
     parser.add_argument("--out", default=os.path.join(harness.REPO, "bench", "results"))
+    parser.add_argument("--per-token", type=float, default=0.0,
+                        help="secondes par token de sortie, mesurees par --self-test ou par calibrate()")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -292,6 +338,11 @@ def main() -> int:
     sessions = anonymize.load_sessions(args.sessions, args.max_tokens)
     print(f"{len(sessions)} sessions anonymisees, "
           f"{sum(s['approx_tokens'] for s in sessions):,} tokens de transcript")
+
+    if not args.per_token:
+        sample = sanitize(sessions[0]["messages"][:-PROTECTED_TAIL])
+        args.per_token = calibrate(sample, args.pause) or 0.0
+        print(f"calibration: {args.per_token} s par token de sortie")
 
     window_start = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     report: dict = {"date": window_start,
@@ -332,21 +383,29 @@ def main() -> int:
                     chosen = {"A": aux_session, "B": warm_session, "C": warm_session,
                               "B'": fresh_session}[arm]
 
-                    probe_model = {"messages": messages}
+                    call_model = {"messages": messages}
                     if kind == "main":
-                        probe_model["tools"] = harness.TOOLS
+                        call_model["tools"] = harness.TOOLS
 
                     full = Transport(base, model, key, {"max_tokens": MAX_OUTPUT}, session=chosen)
-                    full(**probe_model)
-                    time.sleep(args.pause)
-
-                    # The probe runs after the call, in the same session, so it measures decoding alone.
-                    probe = Transport(base, model, key, {"max_tokens": 1}, session=chosen)
-                    probe(**probe_model)
+                    full(**call_model)
                     time.sleep(args.pause)
 
                     reading, answer = full.calls[-1], full.last_text
                     kept = retained(answer, wanted)
+                    questions = quality_probe.build(material, wanted)
+
+                    def grade(model=None, messages=None, max_tokens=24, temperature=0.0):
+                        aux = Transport(ALBERT_BASE, AUX_MODEL, ALBERT_KEY,
+                                        {"max_tokens": max_tokens, "temperature": temperature},
+                                        session=f"grade-{session['session']}")
+                        aux(messages=messages)
+                        return SimpleNamespace(choices=[SimpleNamespace(
+                            message=SimpleNamespace(content=aux.last_text))])
+
+                    graded = quality_probe.ask(answer, questions, grade, AUX_MODEL)
+                    prefill = (round(reading["service_s"] - reading["completion_tokens"] * args.per_token, 2)
+                               if args.per_token else None)
                     entry = {
                         "prompt_tokens": reading["prompt_tokens"],
                         "cached_tokens": reading["cached_tokens"],
@@ -354,23 +413,25 @@ def main() -> int:
                         if reading["prompt_tokens"] else 0.0,
                         "completion_tokens": reading["completion_tokens"],
                         "finish_reason": reading["finish_reason"],
-                        "prefill_s": probe.calls[-1]["latency_s"],
-                        "total_s": reading["latency_s"],
-                        "decode_s": round(max(reading["latency_s"] - probe.calls[-1]["latency_s"], 0.0), 2),
+                        "service_s": reading["service_s"],
+                        "attempts": reading["attempts"],
+                        "prefill_est_s": prefill,
                         "cost_router_usd": reading["cost_router_usd"],
                         "cost_estimate_usd": estimate(reading, kind),
                         "anchors_total": len(wanted),
                         "anchors_kept": sum(kept.values()),
                         "anchors_by_kind": kept,
+                        "mcq_asked": graded["asked"],
+                        "mcq_correct": graded["correct"],
                     }
                     record["arms"][arm] = entry
                     events.append(event(reading, arm, session["session"], repeat, "full"))
                     print(f"r{repeat} {session['session']} {arm:2s} prompt={entry['prompt_tokens']:6d} "
-                          f"cached={entry['cached_tokens']:6d} hit={entry['hit']:.2f} "
-                          f"out={entry['completion_tokens']:4d} "
+                          f"hit={entry['hit']:.2f} out={entry['completion_tokens']:4d} "
                           f"anc={entry['anchors_kept']}/{entry['anchors_total']} "
-                          f"prefill={entry['prefill_s']:5.1f}s total={entry['total_s']:5.1f}s "
-                          f"facture={entry['cost_router_usd']} cout={entry['cost_estimate_usd']:.5f}")
+                          f"qcm={entry['mcq_correct']}/{entry['mcq_asked']} "
+                          f"service={entry['service_s']:5.1f}s essais={entry['attempts']} "
+                          f"prefill~{entry['prefill_est_s']} facture={entry['cost_router_usd']}")
                     kicked += entry["cost_estimate_usd"]
                 except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
                     print(f"r{repeat} {session['session']} {arm:2s} echec apres reprises: {exc}")
@@ -386,8 +447,10 @@ def main() -> int:
               "anchors_by_kind": {k: sum(r["anchors_by_kind"][k] for r in done)
                                   for k in ("path", "number", "decision")},
               "anchors_total": sum(r["anchors_total"] for r in done),
-              "prefill_s": round(sum(r["prefill_s"] for r in done) / len(done), 2) if done else None,
-              "decode_s": round(sum(r["decode_s"] for r in done) / len(done), 2) if done else None}
+              "service_s": round(sum(r["service_s"] for r in done) / len(done), 2),
+              "prefill_est_s": round(sum(r["prefill_est_s"] or 0.0 for r in done) / len(done), 2),
+              "mcq_asked": sum(r["mcq_asked"] for r in done),
+              "mcq_correct": sum(r["mcq_correct"] for r in done)}
         for arm in ARMS
         for done in [[s["arms"][arm] for s in report["sessions"] if s["arms"].get(arm)]]}
 
