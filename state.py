@@ -207,6 +207,6 @@ def observe_usage(**hook_kwargs: Any) -> None:
         cached = _non_negative_int(usage.get("cache_read_tokens")) or 0
         route = cacheability.route_key(
             hook_kwargs.get("provider"), hook_kwargs.get("model"), hook_kwargs.get("base_url"))
-        TRACKER.record(route, prompt, cached)
+        TRACKER.record(route, prompt, cached, origin=cacheability.ORIGIN_MAIN)
     except Exception:
         return

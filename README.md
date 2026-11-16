@@ -188,12 +188,43 @@ observation decides. One observation is always on; two settings are optional, re
   go through the auxiliary path, so there is no feedback loop.
 - `min_cache_ratio: 0.9` — profitability threshold, in `0..1`. When set, a route whose observed
   hit rate over its last eight large measurements is below the threshold is denied the prefix mode
-  even without strikes. No threshold (the default) keeps the base policy: strikes only.
+  even without strikes. The rate is that of the **compaction** calls; the main loop's own reads are
+  only used before the first compaction. Mixing both was measurably wrong: a route serving the loop
+  at 99 % and the compactions at 0 % kept a pooled rate of 0.8-0.9, above any usable threshold, and
+  every loop hit reset the strike counter, so the guard could not fire at all. No threshold (the
+  default) keeps the base policy: strikes only.
 - `force_builtin: true` — permanent fallback to the built-in compressor, for backends known not to
   cache (a local vLLM, for instance): the prefix can only cost, and the built-in prompt is small.
 
     hermes config set plugins.entries.cached-compressor.settings.min_cache_ratio 0.9
     hermes config set plugins.entries.cached-compressor.settings.force_builtin true
+
+### Reading a miss
+
+The prefix line carries the reason, per call, so a zero is never a dead end:
+
+    Compression summary on session prefix: model=deepseek-v4.1-flash prompt=151258 cached=0 route=custom \
+      reason=miss_low wire_age_s=63.9 payload_chars=98572 wire_chars=98572 tools=24/24 \
+      usage=prompt_tokens_details.cached_tokens prior_compaction=0.0 prior_main=0.941
+
+| field | what it settles |
+|---|---|
+| `reason=served` / `partial:N` | the provider served, N % of the prompt |
+| `reason=usage_mute` (`usage=none`) | the response carries no cache field at all: mute route, not a miss |
+| `reason=miss_warm` | earlier compactions were served, so this miss is intermittent |
+| `reason=miss_low` | earlier compactions were not served either, while `prior_main` says the main loop was |
+| `reason=miss_first` / `miss_cold` | no earlier compaction measurement on that route |
+| `wire_age_s` | seconds between the captured payload and the summary call (the TTL question) |
+| `payload_chars` vs `wire_chars` | the prefix actually sent against the captured thread (alignment) |
+| `tools=déclarés/uniques` | a gap means `_build_call_kwargs` will drop duplicates, changing the bytes |
+
+Two production measurements from the first consumer of this line (43 reporting calls, 2026-11-14 to
+16): 27 reads came back at 0 while the main loop had just read 92 to 99 % of a 260k prefix, 48 to
+428 seconds earlier — so neither a cold session nor a missing route explains them — and 13 of the 16
+non-zero reads stopped at 2 048-8 064 tokens, the size of the session's system prompt alone
+(33 540 characters for the session in question). The 5-minute `prompt_caching.cache_ttl` is not a
+candidate on these routes: Hermes excludes DeepSeek on OpenCode from `cache_control` markers, whose
+TTL only applies where markers are emitted.
 
 There is no sleep or delay setting, and that is a measured decision, not an omission: the write
 window probe (`probes/cache_write_sweep.py`, 0/2/5/10 s) shows the prefix is readable on the second

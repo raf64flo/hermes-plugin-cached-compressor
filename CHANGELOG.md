@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.1 (2026-11-16)
+
+- Diagnostic de raté sur la ligne existante. `Compression summary on session prefix:` garde ses
+  quatre champs (`model=`, `prompt=`, `cached=`, `route=`) et ajoute la raison mesurée par appel :
+  `reason=` (`served`, `partial:N`, `usage_mute`, `miss_warm`, `miss_low`, `miss_first`,
+  `miss_cold`), `wire_age_s=` (âge du payload capturé, test du TTL), `payload_chars=` /
+  `wire_chars=` (alignement), `tools=déclarés/uniques` (ce que le client auxiliaire retirerait),
+  `usage=` (emplacement réel du champ de cache : `prompt_tokens_details.cached_tokens` ou
+  `usage.prompt_cache_hit_tokens`, et `none` pour une route muette), `prior_compaction=` /
+  `prior_main=` (taux observés avant l'appel, par origine). Aucun compteur parallèle : le moniteur
+  lit les quatre premiers champs et ignore le reste.
+- `min_cache_ratio` lit désormais le taux de la *compaction*, plus le taux mélangé. Sur les routes
+  qui servent 99 % à la boucle principale et 0 % aux compactions, le taux mélangé restait au-dessus
+  de tout seuil réaliste (mesuré : 0,8 à 0,9), et chaque hit de la boucle remettait les strikes à
+  zéro. Le seuil est optionnel : sans configuration, la politique par défaut est inchangée.
+- `RouteCacheTracker` sépare les mesures par origine (`main` / `compression`) et expose
+  `prefix_strikes(route)`, le nombre de compactions consécutives sans lecture de cache.
+- `tests/test_prefix_miss_reason.py` (12 tests) fixe les étiquettes, le contrat de lecture du
+  moniteur et le non-chevauchement des deux origines. `tests/test_prefix_body_alignment.py` (4 tests)
+  rejoue le vrai `call_llm` contre un faux serveur OpenAI-wire local et prouve que les messages
+  envoyés sont, octet pour octet, ceux du payload capturé ; la seule divergence connue est le
+  dédoublonnage des noms d'outils (`_build_call_kwargs`), et elle est surveillée par `tools=`.
+
 ## 0.5.0 (2026-11-10)
 
 - `bench/fact_recall.py`: nine planted facts in three families (protected tail, summarized middle,
