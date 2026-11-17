@@ -195,7 +195,7 @@ class CachedCompressor(ContextCompressor):
         if self._compression_cancelled():
             raise AuxiliaryExplicitCancellation()
         self._note_aux_route_fallback(route_info)
-        _record_cache_read(self, response, wire)
+        _record_cache_read(self, response, wire, sent=messages)
 
         content = extract_content_or_reasoning(response, max_reasoning_chars=8000)
         where = f"(provider={wire.get('provider')} model={wire.get('model')})"
@@ -253,8 +253,90 @@ def _cached_tokens(response: Any) -> int:
     return 0
 
 
-def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any]) -> None:
-    """Trace le hit réel de la compaction : c'est la mesure qui décide si le mode préfixe paie."""
+def _cache_field_seen(response: Any) -> str:
+    """Emplacement du premier champ de cache présent dans l'usage, ou ``"none"``.
+
+    Sert à distinguer un vrai raté (le provider a répondu 0) d'une route muette (aucun champ de
+    cache dans la réponse, donc indiscernable d'un backend sans cache). Le conteneur est nommé :
+    ``prompt_tokens_details.cached_tokens`` et ``usage.cached_tokens`` ne se lisent pas au même
+    endroit, et un champ déplacé par le fournisseur est exactement ce qu'il faut voir.
+    """
+    usage = _usage_field(response, "usage")
+    details = _usage_field(usage, "prompt_tokens_details")
+    for field in _CACHE_FIELDS:
+        if _usage_field(details, field) is not None:
+            return f"prompt_tokens_details.{field}"
+        if _usage_field(usage, field) is not None:
+            return f"usage.{field}"
+    return "none"
+
+
+def _payload_chars(messages: Any) -> int:
+    """Taille du contenu envoyé, sans sérialisation : le seul ordre de grandeur utile au diagnostic."""
+    if not isinstance(messages, list):
+        return 0
+    total = 0
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        total += len(content) if isinstance(content, str) else len(str(content or ""))
+    return total
+
+
+def _tools_report(tools: Any) -> str:
+    """``déclarés/uniques`` : un écart annonce les octets que le client auxiliaire va retirer.
+
+    ``_build_call_kwargs`` dédoublonne les noms d'outils avant l'envoi ; un doublon dans le payload
+    capturé rend donc les octets de la requête de résumé différents de ceux du tour principal.
+    """
+    if not isinstance(tools, list):
+        return "0/0"
+    names = []
+    for tool in tools:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        name = function.get("name") if isinstance(function, dict) else None
+        names.append(str(name or ""))
+    return f"{len(names)}/{len(set(names))}"
+
+
+def _miss_reason(cached: int, prompt_tokens: Any, field: str, prior_compaction: Optional[float],
+                 prior_main: Optional[float]) -> str:
+    """Pourquoi ce résumé a lu -- ou non -- le cache, en un jeton stable.
+
+    ``served`` / ``partial:N`` : le provider a servi (N % du prompt) ;
+    ``usage_mute`` : la réponse ne porte aucun champ de cache, donc indiscernable d'un backend sans
+    cache -- la seule cause que l'instrumentation doit séparer d'un vrai raté ;
+    ``miss_warm`` : les compactions précédentes étaient servies, ce raté est intermittent ;
+    ``miss_low`` : les compactions précédentes ne l'étaient pas non plus (route qui ne sert pas le
+    préfixe de compaction, alors que ``prior_main`` montre si la boucle principale, elle, est servie) ;
+    ``miss_cold`` : aucune mesure antérieure, sur aucune des deux origines.
+    """
+    prompt = prompt_tokens if isinstance(prompt_tokens, int) else 0
+    if cached and prompt > 0:
+        share = round(100 * cached / prompt)
+        return "served" if share >= 90 else f"partial:{share}"
+    if cached:
+        return "served"
+    if field == "none":
+        return "usage_mute"
+    if prior_compaction is not None:
+        return "miss_warm" if prior_compaction >= 0.5 else "miss_low"
+    if prior_main is not None:
+        return "miss_first"  # premier résumé sur une route déjà connue de la boucle principale
+    return "miss_cold"
+
+
+def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any],
+                       sent: Optional[list[dict[str, Any]]] = None) -> None:
+    """Trace le hit réel de la compaction : c'est la mesure qui décide si le mode préfixe paie.
+
+    La ligne porte désormais la *raison* du raté, mesurée par appel : âge du payload capturé (test
+    du TTL), taille du préfixe envoyé contre celle du fil capturé (alignement), outils
+    déclarés/uniques (ce que le client auxiliaire retire), champ de cache réellement présent dans
+    l'usage, et taux observé avant l'appel. Aucun compteur parallèle : le moniteur continue de lire
+    les quatre premiers champs et ignore le reste.
+    """
     cached = _cached_tokens(response)
     usage = getattr(response, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", None)
@@ -267,12 +349,25 @@ def _record_cache_read(compressor: Any, response: Any, wire: dict[str, Any]) -> 
             round(cached / prompt_tokens, 4) if isinstance(prompt_tokens, int) and prompt_tokens > 0 else None)
     # L'observation décide de la suite : une route qui ne rapporte jamais de lecture de cache ne
     # doit plus payer le préfixe complet (voir cacheability.py).
-    state.TRACKER.record(
-        cacheability.route_key(wire.get("provider"), wire.get("model"), wire.get("base_url")),
-        prompt_tokens, cached)
+    route = cacheability.route_key(wire.get("provider"), wire.get("model"), wire.get("base_url"))
+    # Taux avant cet appel, par origine : la compaction dit si le préfixe est servi, la boucle
+    # principale dit si la route a un cache du tout (donc si ce raté est un froid ou une non-service).
+    prior_compaction = state.TRACKER.observed_ratio(route, origin=cacheability.ORIGIN_COMPRESSION)
+    prior_main = state.TRACKER.observed_ratio(route, origin=cacheability.ORIGIN_MAIN)
+    field = _cache_field_seen(response)
+    reason = _miss_reason(cached, prompt_tokens, field, prior_compaction, prior_main)
+    recorded_at = wire.get("recorded_at")
+    wire_age = round(time.time() - recorded_at, 1) if isinstance(recorded_at, (int, float)) else "na"
+    state.TRACKER.record(route, prompt_tokens, cached, origin=cacheability.ORIGIN_COMPRESSION)
     logger.info(
-        "Compression summary on session prefix: model=%s prompt=%s cached=%s route=%s",
-        wire.get("model"), prompt_tokens, cached, wire.get("provider"))
+        "Compression summary on session prefix: model=%s prompt=%s cached=%s route=%s "
+        "reason=%s wire_age_s=%s payload_chars=%s wire_chars=%s tools=%s usage=%s "
+        "prior_compaction=%s prior_main=%s",
+        wire.get("model"), prompt_tokens, cached, wire.get("provider"),
+        reason, wire_age, _payload_chars(sent), _payload_chars(wire.get("messages")),
+        _tools_report(wire.get("tools")), field,
+        "na" if prior_compaction is None else round(prior_compaction, 3),
+        "na" if prior_main is None else round(prior_main, 3))
 
 
 def register(ctx: Any) -> None:
